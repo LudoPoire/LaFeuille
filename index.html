@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Basket Stats</title>
+<style>
+:root{--bg:#f4f1ec;--card:#fff;--tx:#1d1d1f;--mut:#777;--ac:#e8590c;--ok:#2b8a3e;--ko:#c92a2a;--bd:#ddd}
+@media(prefers-color-scheme:dark){:root{--bg:#161616;--card:#232323;--tx:#f2f2f2;--mut:#999;--bd:#3a3a3a}}
+*{box-sizing:border-box}body{margin:0;font:16px system-ui,sans-serif;background:var(--bg);color:var(--tx)}
+#app{max-width:900px;margin:auto;padding:12px}
+h1,h2{margin:.4em 0}input,textarea,button{font:inherit}
+input,textarea{width:100%;padding:10px;margin:4px 0;border:1px solid var(--bd);border-radius:8px;background:var(--card);color:var(--tx)}
+button{border:0;border-radius:10px;padding:12px;background:var(--card);color:var(--tx);border:1px solid var(--bd);cursor:pointer}
+button.p{background:var(--ac);color:#fff;border-color:var(--ac)}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px;margin:10px 0}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.row>*{flex:1}
+.pl{min-width:64px;padding:10px 4px;font-weight:600}.pl small{display:block;font-weight:400;color:var(--mut);font-size:11px}
+.pl.on{background:var(--ac);color:#fff}.pl.on small{color:#fff}
+.g{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px}
+.g button{padding:18px 4px;font-weight:600}.g .m{border-color:var(--ok);color:var(--ok)}.g .x{border-color:var(--ko);color:var(--ko)}
+table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:5px 3px;text-align:center;border-bottom:1px solid var(--bd)}td:first-child,th:first-child{text-align:left}
+.mut{color:var(--mut);font-size:13px}.err{color:var(--ko)}
+</style></head>
+<body><div id="app"></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script>
+// >>> À REMPLIR (Supabase > Project Settings > API)
+const SUPABASE_URL="https://supabase.com/dashboard/project/zpcvjfwvehfcfnapzvtp/settings/api-keys/legacy", SUPABASE_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpwY3ZqZnd2ZWhmY2ZuYXB6dnRwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA2NTYzMjksImV4cCI6MjEwNjIzMjMyOX0.-Ix-EpglLNyXt8_Zre2fNmAKuwutN1Ql7ghnhp7Hgq4";
+const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+const T=[['t2m','2 pts ✓','m'],['t2x','2 pts ✗','x'],['t3m','3 pts ✓','m'],['t3x','3 pts ✗','x'],['lfm','LF ✓','m'],['lfx','LF ✗','x'],['ro','Rebond off.'],['rd','Rebond déf.'],['ast','Passe déc.'],['stl','Interception'],['blk','Contre'],['tov','Balle perdue'],['pf','Faute']];
+let S={user:null,view:'login',matches:[],m:null,ev:[],sel:null,qt:1,err:''};
+let Q=JSON.parse(localStorage.q||'{"i":[],"d":[]}');
+const saveQ=()=>localStorage.q=JSON.stringify(Q);
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+async function sync(){
+  if(!S.user)return;
+  try{
+    const a=Q.i.slice(),d=Q.d.slice();
+    if(a.length){const r=await sb.from('events').upsert(a);if(r.error)throw r.error;Q.i=Q.i.filter(x=>!a.includes(x));}
+    if(d.length){const r=await sb.from('events').delete().in('id',d);if(r.error)throw r.error;Q.d=Q.d.filter(x=>!d.includes(x));}
+    saveQ();
+  }catch(e){}
+  const p=$('pend');if(p)p.textContent=pending();
+}
+const pending=()=>Q.i.length+Q.d.length?`⏳ ${Q.i.length+Q.d.length} en attente d'envoi`:'✅ synchronisé';
+setInterval(sync,5000);addEventListener('online',sync);
+
+async function login(){
+  const r=await sb.auth.signInWithPassword({email:$('em').value.trim(),password:$('pw').value});
+  if(r.error){S.err='Identifiants incorrects';return draw();}
+  S.user=r.data.user;S.err='';home();
+}
+async function logout(){await sb.auth.signOut();S.user=null;S.view='login';draw();}
+async function home(){
+  S.view='home';draw();
+  const r=await sb.from('matches').select('*').order('created_at',{ascending:false});
+  S.matches=r.data||[];draw();
+}
+async function createMatch(){
+  const roster=$('ro').value.split('\n').map(l=>l.trim()).filter(Boolean).map(l=>{const [n,...r]=l.split(/\s+/);return{n:parseInt(n),name:r.join(' ')}}).filter(p=>!isNaN(p.n));
+  if(!$('tm').value||!roster.length){S.err='Nom d\'équipe et effectif requis';return draw();}
+  const r=await sb.from('matches').insert({team:$('tm').value,opp:$('op').value,roster}).select().single();
+  if(r.error){S.err=r.error.message;return draw();}
+  S.err='';openMatch(r.data);
+}
+async function openMatch(m){
+  S.m=m;S.sel=null;S.qt=1;S.view='live';
+  const r=await sb.from('events').select('*').eq('match_id',m.id).order('created_at').limit(5000);
+  const dels=new Set(Q.d);
+  S.ev=(r.data||[]).filter(e=>!dels.has(e.id));
+  Q.i.filter(e=>e.match_id==m.id&&!S.ev.some(x=>x.id==e.id)).forEach(e=>S.ev.push(e));
+  draw();
+}
+function tap(t){
+  if(S.sel==null){alert("Choisis d'abord un joueur");return;}
+  const e={id:crypto.randomUUID(),match_id:S.m.id,player:S.sel,type:t,quarter:S.qt};
+  S.ev.push(e);Q.i.push(e);saveQ();sync();draw();
+}
+function undo(){
+  const e=S.ev.pop();if(!e)return;
+  const i=Q.i.findIndex(x=>x.id==e.id);
+  if(i>=0)Q.i.splice(i,1);else Q.d.push(e.id);
+  saveQ();sync();draw();
+}
+function stats(){
+  const o={};S.m.roster.forEach(p=>o[p.n]={n:p.n,name:p.name,pts:0,reb:0,ast:0,stl:0,blk:0,tov:0,pf:0,t2m:0,t2x:0,t3m:0,t3x:0,lfm:0,lfx:0});
+  S.ev.forEach(e=>{const s=o[e.player];if(!s)return;
+    if(e.type in s)s[e.type]++;
+    if(e.type=='t2m')s.pts+=2;if(e.type=='t3m')s.pts+=3;if(e.type=='lfm')s.pts+=1;
+    if(e.type=='ro'||e.type=='rd')s.reb++;});
+  return Object.values(o);
+}
+function draw(){
+  const a=$('app');
+  if(S.view=='login'){a.innerHTML=`<h1>🏀 Basket Stats</h1><div class="card"><input id="em" type="email" placeholder="Identifiant (e-mail)"><input id="pw" type="password" placeholder="Mot de passe"><button class="p" style="width:100%;margin-top:6px" onclick="login()">Connexion</button><p class="err">${S.err}</p></div>`;return;}
+  if(S.view=='home'){
+    a.innerHTML=`<div class="row"><h1>Mes matchs</h1><button onclick="logout()" style="max-width:120px">Déconnexion</button></div>
+    ${S.matches.map((m,i)=>`<div class="card"><button style="width:100%;text-align:left" onclick="openMatch(S.matches[${i}])"><b>${esc(m.team)}</b> vs ${esc(m.opp||'?')}<br><span class="mut">${new Date(m.created_at).toLocaleString('fr-FR')}</span></button></div>`).join('')||'<p class="mut">Aucun match pour le moment.</p>'}
+    <div class="card"><h2>Nouveau match</h2><input id="tm" placeholder="Mon équipe"><input id="op" placeholder="Adversaire">
+    <textarea id="ro" rows="6" placeholder="Effectif, un joueur par ligne : numéro puis nom&#10;4 Dupont&#10;7 Martin&#10;10 Bernard"></textarea>
+    <button class="p" style="width:100%" onclick="createMatch()">Créer et démarrer</button><p class="err">${S.err}</p></div>`;return;}
+  const st=stats(),tot=st.reduce((s,p)=>s+p.pts,0);
+  a.innerHTML=`<div class="row"><button onclick="home()" style="max-width:90px">← Matchs</button><b>${esc(S.m.team)} ${tot} pts</b><span class="mut" id="pend" style="text-align:right">${pending()}</span></div>
+  <div class="row" style="margin:8px 0">${[1,2,3,4,5].map(q=>`<button class="${S.qt==q?'p':''}" onclick="S.qt=${q};draw()">${q==5?'Prol.':'QT'+q}</button>`).join('')}</div>
+  <div class="row">${S.m.roster.map(p=>`<button class="pl ${S.sel==p.n?'on':''}" style="flex:0 0 auto" onclick="S.sel=${p.n};draw()">#${p.n}<small>${esc(p.name)}</small></button>`).join('')}</div>
+  <div class="g" style="margin:10px 0">${T.map(t=>`<button class="${t[2]||''}" onclick="tap('${t[0]}')">${t[1]}</button>`).join('')}<button onclick="undo()">↩ Annuler</button></div>
+  <div class="card" style="overflow-x:auto"><table><tr><th>Joueur</th><th>PTS</th><th>REB</th><th>PD</th><th>INT</th><th>CT</th><th>BP</th><th>FT</th><th>2P</th><th>3P</th><th>LF</th></tr>
+  ${st.map(p=>`<tr><td>#${p.n} ${esc(p.name)}</td><td><b>${p.pts}</b></td><td>${p.reb}</td><td>${p.ast}</td><td>${p.stl}</td><td>${p.blk}</td><td>${p.tov}</td><td>${p.pf}</td><td>${p.t2m}/${p.t2m+p.t2x}</td><td>${p.t3m}/${p.t3m+p.t3x}</td><td>${p.lfm}/${p.lfm+p.lfx}</td></tr>`).join('')}</table></div>`;
+}
+(async()=>{
+  const r=await sb.auth.getSession();
+  if(r.data.session){S.user=r.data.session.user;home();sync();}else draw();
+})();
+</script></body></html>
