@@ -54,6 +54,8 @@ input[type=checkbox]{width:auto;margin-right:6px}
 .g .fo{background:#f76707}
 input[type=number]{-moz-appearance:textfield;appearance:textfield}input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
 .av{width:28px;height:28px;border-radius:50%;object-fit:cover;display:inline-flex;align-items:center;justify-content:center;background:var(--bd);font-size:11px;font-weight:700;vertical-align:middle}.bub .av{display:flex;margin-bottom:4px}
+.bad{background:#f0555e1f;color:var(--ko);border-color:#f0555e66}.good{background:#12b8861f;color:var(--ok);border-color:#12b88666}
+.pl .av{display:block;margin:0 auto 6px}
 </style></head>
 <body><div id="app"></div><div id="toast"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
@@ -312,7 +314,7 @@ async function restore(inp){
 const loadXL=()=>window.XLSX?Promise.resolve():new Promise((ok,ko)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';s.onload=ok;s.onerror=ko;document.head.appendChild(s);});
 async function tplXL(){
   try{await loadXL()}catch(e){toast('Connexion requise pour générer le modèle');return}
-  const ws=XLSX.utils.aoa_to_sheet([['Numéro','Nom','Prénom','Poste (PG/SG/SF/PF/C)'],[4,'Dupont','Paul','PG'],[7,'Martin','Léo','C']]);ws['!cols']=[{wch:10},{wch:18},{wch:18},{wch:24}];
+  const ws=XLSX.utils.aoa_to_sheet([['Numéro','Nom','Prénom','Poste (PG/SG/SF/PF/C)'],[4,'Martin','Jean','PG'],[7,'Dupont','Marie','SG']]);ws['!cols']=[{wch:10},{wch:18},{wch:18},{wch:24}];
   const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Effectif');XLSX.writeFile(wb,'modele-effectif.xlsx');
 }
 async function impXL(inp){
@@ -332,18 +334,38 @@ const av2=(u,nm,s)=>u?`<img class="av" style="width:${s}px;height:${s}px" src="$
 const lg=o=>{const t=S.teams.find(t=>t.name==(o?S.m.opp:S.m.team));return t&&t.logo?av2(t.logo,'',22):''};
 function tOpen(i){if(!canW()){toast('👁 Lecture seule');return}S.te={i};S.view='te';draw();}
 async function tSave(){const t=tp(),r=await sb.from('teams').upsert({name:t.name,players:t.players,logo:t.logo||null,color:t.color||null,updated_at:new Date().toISOString()},{onConflict:'name'});if(r.error)toast('Erreur : '+r.error.message);}
-async function tLogo(inp){const f=inp.files[0];if(!f)return;const u=await upImg(f,'t/'+tp().name.replace(/[^a-z0-9]/gi,'_')+'.png',256);if(u){tp().logo=u;tSave();draw();}}
+async function tLogo(inp){const f=inp.files[0];if(!f)return;const u=await upImg(f,'t/'+tp().name.replace(/[^a-z0-9]/gi,'_')+'.png');if(u){tp().logo=u;tSave();draw();}}
 function tColor(v){tp().color=v;tSave();}
 async function newTeam(){const nm=$('ntn').value.trim();if(!nm)return;if(S.teams.some(t=>t.name.toLowerCase()==nm.toLowerCase())){toast('Cette équipe existe déjà');return}S.teams.push({name:nm,players:[]});S.te={i:S.teams.length-1};await tSave();S.view='te';draw();}
-async function upImg(file,path,max){
-  try{
-    const bm=await createImageBitmap(file),sc=Math.min(1,max/Math.max(bm.width,bm.height)),c=document.createElement('canvas');
-    c.width=Math.round(bm.width*sc);c.height=Math.round(bm.height*sc);c.getContext('2d').drawImage(bm,0,0,c.width,c.height);
-    const png=path.endsWith('.png'),b=await new Promise(r=>c.toBlob(r,png?'image/png':'image/jpeg',.85));
-    const r=await sb.storage.from('photos').upload(path,b,{upsert:true,contentType:png?'image/png':'image/jpeg'});
-    if(r.error){toast('Erreur photo : '+r.error.message);return null}
-    return sb.storage.from('photos').getPublicUrl(path).data.publicUrl+'?v='+Date.now();
-  }catch(e){toast('Image illisible');return null}
+function cropImg(file,png){return new Promise(async res=>{
+  let bm;try{bm=await createImageBitmap(file)}catch(e){toast('Image illisible');return res(null)}
+  const ov=document.createElement('div');ov.className='ov';
+  ov.innerHTML=`<div class="card" style="text-align:center"><b>Recadrer l'image</b><canvas width="260" height="260" style="width:260px;height:260px;touch-action:none;border-radius:12px;margin:10px 0;background:#888"></canvas><input type="range" min="100" max="400" value="100"><div class="mut">Glisse pour déplacer · curseur pour zoomer</div><div class="row" style="margin-top:10px"><button>Annuler</button><button class="p">Valider</button></div></div>`;
+  document.body.appendChild(ov);
+  const cv=ov.querySelector('canvas'),x=cv.getContext('2d'),z=ov.querySelector('input'),[bn,bo]=ov.querySelectorAll('button'),base=260/Math.min(bm.width,bm.height);
+  let ox=0,oy=0,dr=null;
+  const rd=()=>{const sc=base*z.value/100,w=bm.width*sc,h=bm.height*sc;ox=Math.max(-(w-260)/2,Math.min((w-260)/2,ox));oy=Math.max(-(h-260)/2,Math.min((h-260)/2,oy));x.clearRect(0,0,260,260);x.drawImage(bm,130+ox-w/2,130+oy-h/2,w,h);};
+  cv.onpointerdown=e=>{dr={x:e.clientX,y:e.clientY,ox,oy};cv.setPointerCapture(e.pointerId)};
+  cv.onpointermove=e=>{if(dr){ox=dr.ox+e.clientX-dr.x;oy=dr.oy+e.clientY-dr.y;rd()}};
+  cv.onpointerup=()=>dr=null;z.oninput=rd;rd();
+  bn.onclick=()=>{ov.remove();res(null)};
+  bo.onclick=()=>{const o=document.createElement('canvas');o.width=o.height=256;const g=o.getContext('2d');if(!png){g.fillStyle='#fff';g.fillRect(0,0,256,256)}g.drawImage(cv,0,0,256,256);ov.remove();o.toBlob(b=>res(b),png?'image/png':'image/jpeg',.88)};
+});}
+async function upImg(file,path){
+  const png=path.endsWith('.png'),b=await cropImg(file,png);if(!b)return null;
+  const r=await sb.storage.from('photos').upload(path,b,{upsert:true,contentType:png?'image/png':'image/jpeg'});
+  if(r.error){toast('Erreur photo : '+r.error.message);return null}
+  return sb.storage.from('photos').getPublicUrl(path).data.publicUrl+'?v='+Date.now();
+}
+function pullTeam(o){
+  const nm=o?S.m.opp:S.m.team,t=S.teams.find(t=>t.name==nm);if(!t){toast("Cette équipe n'est pas enregistrée");return}
+  const R=S.m.roster;let n=0;
+  t.players.forEach(sp=>{
+    const ex=R.find(p=>!!p.o==!!o&&((sp.pid&&p.pid==sp.pid)||(p.n==sp.n&&p.name==sp.name))),d={n:sp.n,name:sp.name,first:sp.first||'',pos:sp.pos||''};
+    if(sp.pid)d.pid=sp.pid;if(sp.photo)d.photo=sp.photo;
+    if(ex){const k=K(ex);Object.assign(ex,d);ex.k=k;}else{d.k=nextK(o);if(o)d.o=1;R.push(d);}n++;
+  });
+  persist();draw();toast('🔄 '+n+' joueur(s) mis à jour depuis « '+nm+' »');
 }
 async function openAcc(){S.view='acc';S.users=null;S.err='';draw();accCall({action:'list'});}
 async function accCall(b){
@@ -413,7 +435,7 @@ async function saveP(){
   const d={n,name:$('pnm').value.trim(),first:$('pfn').value.trim(),pos:$('pps').value},f=$('pph').files[0],E=S.pe;
   const R=E.t?tp().players:S.m.roster,old=E.t?(E.i==null?null:R[E.i]):(E.k==null?null:R.find(p=>K(p)==E.k));
   const pid=(old&&old.pid)||crypto.randomUUID();
-  if(f){toast('Envoi de la photo…');const u=await upImg(f,'p/'+pid+'.jpg',256);if(u)d.photo=u;}
+  if(f){toast('Envoi de la photo…');const u=await upImg(f,'p/'+pid+'.jpg');if(u)d.photo=u;}
   if(!old){d.pid=pid;if(!E.t){d.k=nextK(E.o);if(E.o)d.o=1;}R.push(d);}
   else{const k=old.k!=null?old.k:K(old);Object.assign(old,d);if(!E.t)old.k=k;if(!old.pid)old.pid=pid;}
   S.pe=null;if(E.t)tSave();else persist();draw();
@@ -490,12 +512,12 @@ function draw(){
     else b=`<div class="card"><b>${esc(q.team)}</b> · ${q.rec.n} match${q.rec.n>1?'s':''} · ${q.rec.W} V – ${q.rec.L} D · ${(q.rec.pf/q.rec.n).toFixed(1)} pts marqués / ${(q.rec.pa/q.rec.n).toFixed(1)} encaissés</div><div class="card" style="overflow-x:auto"><table><tr><th>Joueur</th><th>MJ</th><th>MIN</th><th>PTS</th><th>REB</th><th>PD</th><th>INT</th><th>CT</th><th>BP</th><th>2P</th><th>3P</th><th>LF</th><th>EVAL</th></tr>${A.map((p,i)=>`<tr onclick="S.ss.pl=${i};draw()" style="cursor:pointer"><td>#${p.n} ${esc(p.name)}</td><td>${p.gp}</td><td>${mmss(p.tim/p.gp)}</td><td><b>${avg(p,'pts')}</b></td><td>${avg(p,'reb')}</td><td>${avg(p,'ast')}</td><td>${(p.stl/p.gp).toFixed(1)}</td><td>${(p.blk/p.gp).toFixed(1)}</td><td>${(p.tov/p.gp).toFixed(1)}</td><td>${pcn(p.t2m,p.t2m+p.t2x)}</td><td>${pcn(p.t3m,p.t3m+p.t3x)}</td><td>${pcn(p.lfm,p.lfm+p.lfx)}</td><td>${avg(p,'eval')}</td></tr>`).join('')}</table><p class="mut">Moyennes par match. Touche un joueur pour sa fiche.</p></div>`;
     a.innerHTML=hd+(q.pl!=null?'':flt)+b;return;
   }
-  if(S.view=='login'){a.innerHTML=`<h1>🏀 Basket Stats</h1><div class="card"><input id="em" type="email" placeholder="Identifiant (e-mail)"><input id="pw" type="password" placeholder="Mot de passe"><button class="p" style="width:100%;margin-top:6px" onclick="login()">Connexion</button><p class="err">${S.err}</p></div><button style="width:100%" onclick="S.view='obsin';S.err='';draw()">👀 Suivre un match en direct (sans compte)</button>`;return;}
+  if(S.view=='login'){a.innerHTML=`<h1>🏀 LaFeuille</h1><div class="card"><input id="em" type="email" placeholder="Identifiant (e-mail)"><input id="pw" type="password" placeholder="Mot de passe"><button class="p" style="width:100%;margin-top:6px" onclick="login()">Connexion</button><p class="err">${S.err}</p></div><button style="width:100%" onclick="S.view='obsin';S.err='';draw()">👀 Suivre un match en direct (sans compte)</button>`;return;}
   if(S.view=='te'){
     const t=tp();
     a.innerHTML=`<div class="row nw"><button class="nf" onclick="S.view='teams';draw()">←</button><h1>${esc(t.name)}</h1></div>
     <div class="card"><div class="row nw" style="align-items:center">${av2(t.logo,t.name,48)}<label style="margin:0;flex:3">Logo<input type="file" accept="image/*" onchange="tLogo(this)"></label><label style="margin:0">Couleur<input type="color" value="${t.color||'#7c5cff'}" onchange="tColor(this.value)"></label></div></div>
-    <div class="card"><div class="row"><button onclick="tplXL()">⬇ Modèle Excel</button><button onclick="S.xo=-1;document.getElementById('xf').click()">📥 Importer Excel</button></div><div class="bubs">${t.players.map((p,i)=>({p,i})).sort((x,y)=>x.p.n-y.p.n).map(({p,i})=>`<button class="bub" onclick="tEdit(${i})">${av(p)}<b>#${p.n}</b> ${esc(p.name)}<small>${esc(p.first||'')}${p.pos?' · '+p.pos:''}</small></button>`).join('')}<button class="bub add" onclick="tEdit(null)">＋</button></div><input type="file" id="xf" accept=".xlsx,.xls,.csv" hidden onchange="impXL(this)"></div>`+peH()+dlgH();return;
+    <p class="mut">✅ Les modifications sont enregistrées automatiquement. Dans un match, onglet Effectif, « 🔄 Mettre à jour depuis l'équipe enregistrée » reprend ces changements.</p><div class="card"><div class="row"><button onclick="tplXL()">⬇ Modèle Excel</button><button onclick="S.xo=-1;document.getElementById('xf').click()">📥 Importer Excel</button></div><div class="bubs">${t.players.map((p,i)=>({p,i})).sort((x,y)=>x.p.n-y.p.n).map(({p,i})=>`<button class="bub" onclick="tEdit(${i})">${av(p)}<b>#${p.n}</b> ${esc(p.name)}<small>${esc(p.first||'')}${p.pos?' · '+p.pos:''}</small></button>`).join('')}<button class="bub add" onclick="tEdit(null)">＋</button></div><input type="file" id="xf" accept=".xlsx,.xls,.csv" hidden onchange="impXL(this)"></div>`+peH()+dlgH();return;
   }
   if(S.view=='acc'){
     const U=S.users,RL={admin:'Administrateur',stat:'Statisticien',lecteur:'Lecteur'};
@@ -507,13 +529,13 @@ function draw(){
     a.innerHTML=`<div class="row"><button class="nf" onclick="home()">←</button><h1>Équipes</h1></div>${canW()?`<div class="row nw"><input id="ntn" placeholder="Nom de la nouvelle équipe"><button class="nf p" onclick="newTeam()">＋ Créer</button></div>`:''}${S.teams.map((t,i)=>`<div class="card"><div class="row nw" style="align-items:center">${av2(t.logo,t.name,32)}<b style="flex:3">${esc(t.name)}</b>${canW()?`<button class="nf" onclick="tOpen(${i})">✏️ Modifier</button><button class="nf" onclick="delTeam(${i})">🗑</button>`:''}</div><div class="mut">${t.players.length} joueur${t.players.length>1?'s':''}</div><div class="bubs">${t.players.slice().sort((x,y)=>x.n-y.n).map(p=>`<div class="bub"><b>#${p.n}</b> ${esc(p.name)}<small>${esc(p.first||'')}${p.pos?' · '+p.pos:''}</small></div>`).join('')}</div></div>`).join('')||"<p class='mut'>Aucune équipe enregistrée. Enregistre-en une depuis l'onglet Effectif d'un match (bouton 💾).</p>"}`+dlgH();return;
   }
   if(S.view=='home'){
-    a.innerHTML=`<div class="row"><h1>LaFeuille</h1><button class="nf" onclick="S.view='teams';draw()">👥 Équipes</button><button class="nf" onclick="openSS()">📊 Saisons</button>${S.role=='admin'?'<button class="nf" onclick="openAcc()">🔐 Comptes</button>':''}<button class="nf" onclick="logout()">Déconnexion</button></div>
-    <div class="row"><select onchange="S.mf=this.value;draw()"><option value="">Tous les matchs</option><option value="open" ${S.mf=='open'?'selected':''}>En cours</option><option value="closed" ${S.mf=='closed'?'selected':''}>Terminés</option></select><button class="nf" onclick="backup()">⬇ Sauvegarde</button><button class="nf" onclick="document.getElementById('rf').click()">⬆ Restaurer</button><input type="file" id="rf" accept=".json" hidden onchange="restore(this)"></div>
+    a.innerHTML=`<div class="row"><h1>LaFeuille</h1><button class="nf" onclick="S.view='teams';draw()">👥 Équipes</button><button class="nf" onclick="openSS()">📊 Saisons</button><button class="nf bad" onclick="logout()">Déconnexion</button></div>
+    <div class="row"><select onchange="S.mf=this.value;draw()"><option value="">Tous les matchs</option><option value="open" ${S.mf=='open'?'selected':''}>En cours</option><option value="closed" ${S.mf=='closed'?'selected':''}>Terminés</option></select></div>
     ${S.matches.map((m,i)=>(S.mf&&(S.mf=='closed')!=!!m.closed)?'':`<div class="card row nw"><button style="text-align:left" onclick="openMatch(S.matches[${i}])"><b>${esc(m.team)}</b> vs ${esc(m.opp||'?')}<br><span class="mut">${new Date(m.created_at).toLocaleString('fr-FR')} · ${m.closed?'✅ '+(m.final?m.final.h+' : '+m.final.a:'terminé'):'🔴 en cours'}${m.season?' · '+esc(m.season):''}</span></button>${canW()?`<button class="nf" onclick="delMatch(${i})">🗑</button>`:''}</div>`).join('')||'<p class="mut">Aucun match pour le moment.</p>'}
     ${canW()?`<div class="card"><h2>Nouveau match</h2>${['tm','op'].map((id,i)=>`<label>${i?'Adversaire':'Mon équipe'}<select id="${id}" onchange="document.getElementById('${id}n').style.display=this.value=='__new'?'block':'none'"><option value="">${i?'— à définir plus tard —':'— choisir une équipe —'}</option>${S.teams.map(t=>`<option>${esc(t.name)}</option>`).join('')}<option value="__new">➕ Nouvelle équipe…</option></select><input id="${id}n" placeholder="Nom de la nouvelle équipe" style="display:none"></label>`).join('')}
     <label>Saison<select id="sea" onchange="document.getElementById('sean').style.display=this.value=='__new'?'block':'none'">${seas().map(x=>`<option>${esc(x)}</option>`).join('')}<option value="__new">➕ Nouvelle saison…</option></select><input id="sean" placeholder="Ex. 2026-2027" style="display:${seas().length?'none':'block'}"></label><label><input type="checkbox" id="ins" checked>Compter dans les stats de saison</label>
     <div class="row"><label>Périodes<input id="np" type="number" inputmode="numeric" value="4"></label><label>Durée (min)<input id="du" type="number" inputmode="numeric" value="10"></label></div>
-    <p class="mut">Une équipe enregistrée importe son effectif. Une nouvelle équipe se complète dans l'onglet Effectif (puis 💾 pour la retrouver la prochaine fois).</p><button class="p" style="width:100%" onclick="createMatch()">Créer et démarrer</button><p class="err">${S.err}</p></div>`:''}`+dlgH();return;}
+    <p class="mut">Une équipe enregistrée importe son effectif. Une nouvelle équipe se complète dans l'onglet Effectif (puis 💾 pour la retrouver la prochaine fois).</p><button class="p" style="width:100%" onclick="createMatch()">Créer et démarrer</button><p class="err">${S.err}</p></div>`:''}<div class="row" style="margin-top:16px">${S.role=='admin'?'<button onclick="openAcc()">🔐 Comptes</button>':''}<button onclick="backup()">⬇ Sauvegarde</button><button onclick="document.getElementById('rf').click()">⬆ Restaurer</button><input type="file" id="rf" accept=".json" hidden onchange="restore(this)"></div>`+dlgH();return;}
   const st=stats(),ons=st.c,by={};st.rows.forEach(p=>by[p.k]=p);
   const hOn=ons.filter(k=>k<1000),oOn=ons.filter(k=>k>=1000),oN=S.m.opp||'Adversaire';
   const pb=(k,f,cl)=>{const p=by[k];return `<button class="pl ${cl}${p.pf>=5?' f5':p.pf==4?' f4':''}${p.stint>=LIM?' long':''}" style="flex:0 0 auto;border-top:3px solid ${tcol(p.o)||'var(--bd)'}" onclick="${f}(${k})">${p.photo?av(p,24):''}#${p.n}<small>${esc(p.name)}</small><small>${p.pts}pt ${p.pf}F</small></button>`};
@@ -529,7 +551,7 @@ function draw(){
     const sec=(o,nm)=>{
       const on=o?oOn:hOn,bn=S.m.roster.filter(p=>!!p.o==!!o&&!on.includes(K(p))).map(K);
       const cn=on.length-S.so.filter(k=>on.includes(k)).length+S.si.filter(k=>bn.includes(k)).length;
-      const bt=(k,x,cl)=>`<button class="pl ${cl}" style="flex:0 0 auto" onclick="tg('${x}',${k})">#${by[k].n}<small>${esc(by[k].name)}</small></button>`;
+      const bt=(k,x,cl)=>`<button class="pl ${cl}" style="flex:0 0 auto" onclick="tg('${x}',${k})">${av(by[k],24)}#${by[k].n}<small>${esc(by[k].name)}</small></button>`;
       return{cn,h:`<b>${esc(nm)}</b> <span class="mut">(${cn}/5 après changement)</span>${on.length?`<div class="mut">Sortent</div><div class="row">${on.map(k=>bt(k,'so',S.so.includes(k)?'sw':'')).join('')}</div>`:''}<div class="mut">Entrent</div><div class="row">${bn.map(k=>bt(k,'si',S.si.includes(k)?'on':'')).join('')||'<span class="mut">Aucun remplaçant</span>'}</div>`};
     };
     const A=sec(0,S.m.team),D=sec(1,oN),ok=(S.so.length||S.si.length)&&A.cn<=5&&D.cn<=5;
@@ -561,7 +583,7 @@ function draw(){
     <tr><td><b>Total</b></td><td></td><td><b>${T('pts')}</b></td><td>${T('reb')}</td><td>${T('ast')}</td><td>${T('stl')}</td><td>${T('blk')}</td><td>${T('tov')}</td><td>${T('pf')}</td><td>${T('fr')}</td><td>${T('t2m')}/${T('t2m')+T('t2x')}</td><td>${T('t3m')}/${T('t3m')+T('t3x')}</td><td>${T('lfm')}/${T('lfm')+T('lfx')}</td><td></td><td><b>${rs.reduce((x,p)=>x+EV(p),0)}</b></td></tr></table></div>`};
     body=tbl(st.rows.filter(p=>!p.o),S.m.team)+tbl(st.rows.filter(p=>p.o),oN)+scoreCard()+lineCard(st)+shotCard(0)+shotCard(1)+`<button style="width:100%" onclick="S.ex=true;draw()">⬇ Exporter…</button>${S.obs||!canW()?'':`<button style="width:100%;margin-top:8px" onclick="${S.m.closed?'reopen()':'endMatch()'}">${S.m.closed?'🔓 Rouvrir le match':'🏁 Terminer le match'}</button>`}`;
   }else{
-    const sec=(o,nm)=>`<div class="card"><div class="row"><b>${esc(nm)}</b><button class="nf" onclick="saveTeam(${o})">💾 Enregistrer l'équipe</button></div><div class="row" style="margin:6px 0"><button onclick="tplXL()">⬇ Modèle Excel</button><button onclick="S.xo=${o};document.getElementById('xf').click()">📥 Importer Excel</button></div><div class="bubs">${S.m.roster.filter(p=>!!p.o==!!o).sort((a,b)=>a.n-b.n).map(p=>`<button class="bub" onclick="editP(${K(p)},${o})">${av(p)}<b>#${p.n}</b> ${esc(p.name)}<small>${esc(p.first||'')}${p.pos?' · '+p.pos:''}</small></button>`).join('')}<button class="bub add" onclick="editP(null,${o})">＋</button></div></div>`;
+    const sec=(o,nm)=>`<div class="card"><div class="row"><b>${esc(nm)}</b><button class="nf good" onclick="saveTeam(${o})">💾 Enregistrer l'équipe</button></div><div class="row" style="margin:6px 0"><button onclick="pullTeam(${o})">🔄 Mettre à jour depuis l'équipe enregistrée</button></div><div class="row" style="margin:6px 0"><button onclick="tplXL()">⬇ Modèle Excel</button><button onclick="S.xo=${o};document.getElementById('xf').click()">📥 Importer Excel</button></div><div class="bubs">${S.m.roster.filter(p=>!!p.o==!!o).sort((a,b)=>a.n-b.n).map(p=>`<button class="bub" onclick="editP(${K(p)},${o})">${av(p)}<b>#${p.n}</b> ${esc(p.name)}<small>${esc(p.first||'')}${p.pos?' · '+p.pos:''}</small></button>`).join('')}<button class="bub add" onclick="editP(null,${o})">＋</button></div></div>`;
     body=sec(0,S.m.team)+sec(1,oN)+'<input type="file" id="xf" accept=".xlsx,.xls,.csv" hidden onchange="impXL(this)">';
   }
   a.innerHTML=head+body+popH()+peH()+exH()+ckH()+dlgH();
