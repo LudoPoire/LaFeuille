@@ -62,7 +62,9 @@ input[type=number]{-moz-appearance:textfield;appearance:textfield}input[type=num
 body.sz-l .g button{height:60px;font-size:16px}body.sz-l .g .tall{height:84px}body.sz-l .g .ck{height:84px}
 body.sz-xl .g button{height:70px;font-size:17px}body.sz-xl .g .tall{height:98px}body.sz-xl .g .ck{height:98px}
 body.lh .g{transform:scaleX(-1)}body.lh .g>*{transform:scaleX(-1)}
-.gt{background:none;border:0;padding:0;text-align:left;color:inherit;cursor:pointer}.gt h1{margin:.4em 0}
+.gt{background:none;border:0;padding:0;text-align:left;color:inherit;cursor:pointer}
+body.bdv #app{max-width:none;padding:0 2vw}.gt h1{margin:.4em 0}
+.pl.ab{background:#8b8fa3;color:#fff;border-color:#8b8fa3}.pl.ab small{color:#fff}.bub.ab{opacity:.45}.pl small{max-width:84px;text-overflow:ellipsis}
 </style></head>
 <body><div id="app"></div><div id="toast"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
@@ -84,28 +86,32 @@ const inG=x=>!S.gid||x.group_id==S.gid,GM=()=>S.matches.filter(inG),GT=()=>S.tea
 const $=id=>document.getElementById(id);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const K=p=>p.k!=null?p.k:(p.o?p.n+1000:p.n);
+const ini=f=>(f||'').trim().split(/\s+/)[0].split('-').filter(Boolean).map(x=>x[0].toUpperCase()+'.').join('-');
+const dn=p=>{const i=ini(p.first);return i?i+' '+(p.name||''):(p.name||'')};
 const parse=(t,o)=>t.split('\n').map(l=>l.trim()).filter(Boolean).map(l=>{const [n,...r]=l.split(/\s+/);const p={n:parseInt(n),name:r.join(' ')};if(o)p.o=1;return p}).filter(p=>!isNaN(p.n));
 const TL={t2m:'+2 pts',t2x:'2 pts raté',t3m:'+3 pts',t3x:'3 pts raté',lfm:'+LF',lfx:'LF raté',ro:'Rebond off.',rd:'Rebond déf.',ast:'Passe déc.',stl:'Interception',blk:'Contre',tov:'Balle perdue',pf:'Faute',fr:'Faute provoquée'};
-const who=k=>{const p=S.m.roster.find(p=>K(p)==k);return p?`#${p.n} ${p.name} (${p.o?(S.m.opp||'Adv.'):S.m.team})`:'joueur retiré'};
+const who=k=>{const p=S.m.roster.find(p=>K(p)==k);return p?`#${p.n} ${dn(p)} (${p.o?(S.m.opp||'Adv.'):S.m.team})`:'joueur retiré'};
 const PL=p=>p>S.m.np?'PR'+(p-S.m.np):'QT'+p;
 const plen=p=>p<=S.m.np?S.m.dur:300;
 const start=p=>{let s=0;for(let i=1;i<p;i++)s+=plen(i);return s};
 const tt=(q,c)=>start(q)+plen(q)-c;
 const mmss=s=>{s=Math.max(0,Math.round(s));return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')};
-const pending=()=>{const n=Q.i.length+Q.d.length+Q.m.length;return n?`⏳ ${n} en attente`:'✅ synchronisé'};
+const pending=()=>{const n=Q.i.length+Q.d.length+Q.m.length;return !navigator.onLine?'🔴 hors connexion'+(n?` · ${n} en attente`:''):n?`🟠 ${n} en attente`:'🟢 synchronisé'};
 
 async function sync(){
   if(!S.user)return;
   try{
     const mm=Q.m.slice();if(mm.length){const r=await sb.from('matches').upsert(mm);if(r.error)throw r.error;Q.m=Q.m.filter(x=>!mm.includes(x));}
     const a=Q.i.slice(),d=Q.d.slice();
-    if(a.length){const r=await sb.from('events').upsert(a);if(r.error)throw r.error;Q.i=Q.i.filter(x=>!a.includes(x));}
+    const a1=a.filter(x=>x.type.slice(0,2)!='ar'),a2=a.filter(x=>x.type.slice(0,2)=='ar');
+    if(a1.length){const r=await sb.from('events').upsert(a1);if(r.error)throw r.error;Q.i=Q.i.filter(x=>!a1.includes(x));}
+    if(a2.length){const r=await sb.from('events').upsert(a2);if(!r.error)Q.i=Q.i.filter(x=>!a2.includes(x));}
     if(d.length){const r=await sb.from('events').delete().in('id',d);if(r.error)throw r.error;Q.d=Q.d.filter(x=>!d.includes(x));}
     saveQ();
   }catch(e){}
   const p=$('pend');if(p)p.textContent=pending();
 }
-setInterval(sync,5000);addEventListener('online',sync);
+setInterval(sync,5000);addEventListener('online',sync);addEventListener('offline',()=>{const p=$('pend');if(p)p.textContent=pending()});
 
 async function login(){
   if(SUPABASE_KEY.includes('COLLE_ICI')){S.err="Clé Supabase non renseignée.";return draw();}
@@ -121,10 +127,12 @@ async function home(){
     const r=await sb.from('matches').select('*').order('created_at',{ascending:false});if(r.error)throw r.error;
     const tr=await sb.from('teams').select('*');if(tr.error)throw tr.error;
     const gr=await sb.from('groups').select('*').order('name');
-    S.matches=r.data||[];S.teams=tr.data||[];S.groups=gr.error?[]:(gr.data||[]);
+    const am=r.data||[],at=tr.data||[],ag=gr.error?[]:(gr.data||[]);
+    S.trash={m:am.filter(x=>x.deleted_at),t:at.filter(x=>x.deleted_at),g:ag.filter(x=>x.deleted_at)};
+    S.matches=am.filter(x=>!x.deleted_at);S.teams=at.filter(x=>!x.deleted_at);S.groups=ag.filter(x=>!x.deleted_at);
     cacheSet('matches',S.matches);cacheSet('teams',S.teams);cacheSet('groups',S.groups);pruneCache();
   }catch(e){ok=false;S.matches=cacheGet('matches')||[];S.teams=cacheGet('teams')||[];S.groups=cacheGet('groups')||[];}
-  Q.m.forEach(m=>{const x=S.matches.find(y=>y.id==m.id);if(x)Object.assign(x,m);else S.matches.unshift({...m})});
+  Q.m.forEach(m=>{const x=S.matches.find(y=>y.id==m.id);if(x)Object.assign(x,m);else if(!TR().m.some(y=>y.id==m.id))S.matches.unshift({...m})});
   S.off=!ok;pickGroup();draw();
 }
 function pickGroup(){const ids=S.groups.map(g=>g.id),sv=(()=>{try{return localStorage.lf_gid}catch(e){}})();S.gid=ids.includes(S.gid)?S.gid:(ids.includes(sv)?sv:(ids[0]||null));}
@@ -142,24 +150,24 @@ async function createMatch(){
 }
 async function openMatch(m){
   S.m=m;S.sel=null;S.ps=null;S.edit=null;S.dlg=null;S.pop=null;S.pe=null;S.ex=false;S.ck=null;S.panel=null;S.so=[];S.si=[];S.tab='rec';S.view='live';S.to=null;wake();
-  const c=JSON.parse(localStorage['c'+m.id]||'null');
-  S.qt=c?c.q:1;S.rem=c?c.rem:m.dur;S.run=false;
+  const k=m.clk,c=JSON.parse(localStorage['c'+m.id]||'null')||(k?{q:k.q,rem:k.run?Math.max(0,k.rem-(Date.now()-k.at)/1000):k.rem}:null);
+  S.qt=c?c.q:1;S.rem=c?c.rem:m.dur;S.run=false;S.duo=localStorage['d'+m.id]||null;S.mine=new Set();
   let ev=await fetchAll([m.id]);
   if(ev)cacheSet('ev'+m.id,ev);else{ev=cacheGet('ev'+m.id)||[];toast('📴 Hors connexion — données locales');}
   const dels=new Set(Q.d);
   S.ev=ev.filter(e=>!dels.has(e.id));
   Q.i.filter(e=>e.match_id==m.id&&!S.ev.some(x=>x.id==e.id)).forEach(e=>S.ev.push(e));
-  S.ev.sort((a,b)=>a.ts-b.ts);if(!S.ev.length&&!m.closed&&canW())initStart();draw();
+  S.ev.sort((a,b)=>a.ts-b.ts);if(!c&&S.ev.length){const le=S.ev[S.ev.length-1];S.qt=le.quarter;S.rem=le.clock;}if(!S.ev.length&&!m.closed&&canW())initStart();draw();if(S.duo)setTimeout(duoTick,300);
 }
 /* chrono */
 const saveC=()=>{localStorage['c'+S.m.id]=JSON.stringify({q:S.qt,rem:S.rem});pushClk();};
-function stopClock(){S.run=false;clearInterval(tk);pushClk();}
+function stopClock(){if(S.duo=='follow')return;S.run=false;clearInterval(tk);pushClk();}
 function clockToggle(){
   if(S.run){stopClock();saveC();return draw();}
   if(S.rem<=0)return;
   startClock();draw();
 }
-function startClock(){if(S.run||S.rem<=0)return;S.run=true;S.last=Date.now();tk=setInterval(tick,250);pushClk();}
+function startClock(){if(S.duo=='follow'||S.run||S.rem<=0)return;S.run=true;S.last=Date.now();tk=setInterval(tick,250);pushClk();}
 function tick(){
   const n=Date.now();S.rem=Math.max(0,S.rem-(n-S.last)/1000);S.last=n;
   if(S.rem<=0){stopClock();vib(600);beep();saveC();if(S.qt<S.m.np+2)ask(`Fin de <b>${PL(S.qt)}</b>. Passer à <b>${PL(S.qt+1)}</b> ?<br><span class="mut">Vérifie que toutes les stats sont enregistrées.</span>`,()=>setPeriod(S.qt+1));else draw();return;}
@@ -181,12 +189,13 @@ function ckH(){if(!S.ck)return '';
   return `<div class="ov"><div class="card" style="text-align:center"><b>Régler le chrono</b><div class="row nw" style="justify-content:center;align-items:center;margin:10px 0">${col('m')}<span style="flex:0 0 auto;font-size:28px;font-weight:800">:</span>${col('s')}</div><div class="mut">minutes · secondes — fais glisser les roues (1 seconde par cran)</div><div class="row" style="margin-top:12px"><button onclick="ckNo()">Annuler</button><button class="p" onclick="ckOk()">Valider</button></div></div></div>`;}
 /* événements */
 function add(type,player,ts){
+  if(S.duo=='follow')oClock();
   const e={id:crypto.randomUUID(),match_id:S.m.id,player,type,quarter:S.qt,clock:Math.ceil(S.rem),ts:ts||Date.now()};
-  S.ev.push(e);Q.i.push(e);saveQ();sync();saveC();return e;
+  (S.mine=S.mine||new Set()).add(e.id);S.ev.push(e);Q.i.push(e);saveQ();sync();saveC();return e;
 }
 const court=()=>{const c=[];S.ev.forEach(e=>{if(e.type=='in'&&!c.includes(e.player))c.push(e.player);if(e.type=='out'){const i=c.indexOf(e.player);if(i>=0)c.splice(i,1)}});return c};
 const SH=['t2m','t2x','t3m','t3x'];
-const lbl=k=>{const p=S.m.roster.find(p=>K(p)==k);return p?'#'+p.n+' '+p.name:'?'};
+const lbl=k=>{const p=S.m.roster.find(p=>K(p)==k);return p?'#'+p.n+' '+dn(p):'?'};
 const mates=(k,same)=>court().filter(x=>((x>=1000)==(k>=1000))==same&&x!=k&&S.m.roster.some(p=>K(p)==x));
 function rec(k,t){
   if(lock())return;
@@ -194,16 +203,17 @@ function rec(k,t){
   if(t=='pf'||t=='fr')stopClock();else if(t!='lfm'&&t!='lfx')startClock();
   toast(TL[t]+' — '+who(k));
   vib(15);
-  if(t=='pf'&&S.ev.filter(x=>x.type=='pf'&&x.player==k).length>=5)toast('⚠️ '+who(k)+' : 5e faute — exclu');
+  if(t=='pf')fAlert(k);
   S.sel=null;S.ps=null;follow(e);
 }
+function fAlert(k){const n=S.ev.filter(x=>x.type=='pf'&&x.player==k).length;if(n==4){toast('⚠️ '+who(k)+' : 4 fautes',4000);vib([120,60,120]);}else if(n>=5){toast('⚠️ '+who(k)+' : '+n+'e faute — exclu',4000);}}
 function pick(title,ks,f){if(ks.length)pop({t:title,sk:'Ignorer',opts:ks.map(x=>[lbl(x),()=>f(x)])});}
 function scored(x,ty){const e=add(ty,x);toast(TL[ty]+' — '+who(x));pop({map:1,t:'Où était le tir ?',e});}
 function follow(e){
   const k=e.player,t=e.type;
   if(SH.includes(t))return pop({map:1,t:'Où était le tir ? ('+TL[t]+')',e,sk:'Passer',then:()=>{if(t[2]=='m'){const m=mates(k,true);if(m.length)pop({t:'Passe décisive ?',sk:'Sans passe',opts:m.map(x=>[lbl(x),()=>{add('ast',x);toast('Passe déc. — '+who(x))}])});}}});
   if(t=='pf')pick('Qui a subi la faute ?',mates(k,false),x=>{add('fr',x);toast('Faute provoquée — '+who(x))});
-  if(t=='fr')pick('Qui a fait la faute ?',mates(k,false),x=>{add('pf',x);toast('Faute — '+who(x))});
+  if(t=='fr')pick('Qui a fait la faute ?',mates(k,false),x=>{add('pf',x);toast('Faute — '+who(x));fAlert(x)});
   if(t=='ast')pick('Qui a marqué ?',mates(k,true),x=>pop({t:'Type de panier',sk:'Annuler',opts:[['+2 pts',()=>scored(x,'t2m')],['+3 pts',()=>scored(x,'t3m')]]}));
 }
 function pop(o){S.pop=o;draw();}
@@ -230,36 +240,49 @@ function pCourt(k){
 function tg(k,n){const a=S[k],i=a.indexOf(n);i>=0?a.splice(i,1):a.push(n);draw();}
 function closeP(){S.panel=null;S.edit=null;draw();}
 let tT=null,lpT=null,lpF=false;
-function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(tT);tT=setTimeout(()=>t.classList.remove('show'),2200);}
+function toast(m,d){const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(tT);tT=setTimeout(()=>t.classList.remove('show'),d||2200);}
 function ask(msg,fn){S.dlg={msg,fn};draw();}
 function dlgOk(){const f=S.dlg.fn;S.dlg=null;f();draw();}
 function dlgH(){return S.dlg?`<div class="ov"><div class="card"><p>${S.dlg.msg}</p><div class="row"><button onclick="dlgNo()">Annuler</button><button class="p" onclick="dlgOk()">Confirmer</button></div></div></div>`:''}
+const TR=()=>S.trash||(S.trash={m:[],t:[],g:[]});
+const trN=()=>{const T=TR();return T.m.length+T.t.length+(S.role=='admin'?T.g.length:0)};
+async function upd(tb,col,val,patch){const r=await sb.from(tb).update(patch).eq(col,val).select();if(r.error)return{e:r.error.message,miss:/deleted_at|column/i.test(r.error.message)};if(!r.data||!r.data.length)return{e:'aucune ligne modifiée (droits insuffisants ?)',none:true};return{};}
+const noTr='🗑 Corbeille pas encore activée : ouvre « 🗑 Corbeille » sur l\'accueil pour la mettre en place';
 function delMatch(i){
   const m=S.matches[i];
-  ask(`Supprimer le match <b>${esc(m.team)} vs ${esc(m.opp||'?')}</b> ?<br><span class="mut">Toutes ses stats seront définitivement supprimées.</span>`,async()=>{
-    const r=await sb.from('matches').delete().eq('id',m.id);
-    if(r.error){toast('Erreur : '+r.error.message);return;}
-    Q.i=Q.i.filter(e=>e.match_id!=m.id);Q.m=Q.m.filter(x=>x.id!=m.id);saveQ();localStorage.removeItem('c'+m.id);
-    S.matches=S.matches.filter(x=>x.id!=m.id);toast('🗑 Match supprimé');draw();
+  ask(`Mettre le match <b>${esc(m.team)} vs ${esc(m.opp||'?')}</b> à la corbeille ?<br><span class="mut">Tu pourras le restaurer depuis la Corbeille (page d'accueil).</span>`,async()=>{
+    const iso=new Date().toISOString(),r=await upd('matches','id',m.id,{deleted_at:iso,code:null});
+    if(r.e){
+      if(r.none&&Q.m.some(x=>x.id==m.id)){Q.i=Q.i.filter(e=>e.match_id!=m.id);Q.m=Q.m.filter(x=>x.id!=m.id);saveQ();S.matches=S.matches.filter(x=>x.id!=m.id);cacheSet('matches',S.matches);toast('🗑 Match supprimé (jamais synchronisé)');draw();return;}
+      toast(r.miss?noTr:'Erreur : '+r.e,5000);return;
+    }
+    TR().m.unshift({...m,deleted_at:iso,code:null});
+    S.matches=S.matches.filter(x=>x.id!=m.id);cacheSet('matches',S.matches);toast('🗑 Match mis à la corbeille');draw();
   });
 }
 function delTeam(i){
   const t=S.teams[i];
-  ask(`Supprimer l'équipe <b>${esc(t.name)}</b> ?<br><span class="mut">Son effectif enregistré sera supprimé. Les matchs déjà joués ne sont pas modifiés.</span>`,async()=>{
-    const r=await sb.from('teams').delete().eq('name',t.name);
-    if(r.error){toast('Erreur : '+r.error.message);return;}
-    S.teams=S.teams.filter(x=>x.name!=t.name);toast('🗑 Équipe supprimée');draw();
+  ask(`Mettre l'équipe <b>${esc(t.name)}</b> à la corbeille ?<br><span class="mut">Son effectif enregistré sera masqué (restaurable). Les matchs déjà joués ne sont pas modifiés.</span>`,async()=>{
+    const iso=new Date().toISOString(),r=await upd('teams','name',t.name,{deleted_at:iso});
+    if(r.e){toast(r.miss?noTr:'Erreur : '+r.e,5000);return;}
+    TR().t.unshift({...t,deleted_at:iso});
+    S.teams=S.teams.filter(x=>x.name!=t.name);cacheSet('teams',S.teams);toast('🗑 Équipe mise à la corbeille');draw();
   });
 }
 const LIM=480;
 const fsq=n=>`<span class="fq">${[0,1,2,3,4].map(i=>`<i class="${i==4?'r ':''}${n>i?'on':''}"></i>`).join('')}</span>`;
 const EV=p=>p.pts+p.reb+p.ast+p.stl+p.blk-p.t2x-p.t3x-p.lfx-p.tov;
+const act=p=>p.tim||p.pts||p.reb||p.ast||p.stl||p.blk||p.tov||p.pf||p.fr||p.t2x||p.t3x||p.lfx,vis=p=>!p.abs||act(p);
 let wl=null,ac=null;
 async function wake(){try{if('wakeLock' in navigator&&!wl){wl=await navigator.wakeLock.request('screen');wl.addEventListener('release',()=>wl=null);}}catch(e){}}
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&(S.view=='live'||S.view=='board'))wake();});
 document.addEventListener('click',()=>{try{ac=ac||new AudioContext();ac.resume&&ac.resume();}catch(e){}},{once:true});
 function beep(){if(!CFG.snd)return;try{const o=ac.createOscillator(),g=ac.createGain();o.connect(g);g.connect(ac.destination);o.frequency.value=880;g.gain.value=.2;o.start();o.stop(ac.currentTime+.6);}catch(e){}}
 const tfl=sd=>S.ev.filter(e=>e.type=='pf'&&e.quarter==S.qt&&(e.player>=1000)==!!sd).length;
+const bonus=o=>tfl(o?0:1)>=5?'<span style="color:var(--ko);font-weight:800">BONUS</span>':'';
+const arrow=()=>{for(let i=S.ev.length-1;i>=0;i--){const t=S.ev[i].type;if(t=='ar0')return 0;if(t=='ar1')return 1;}return null};
+const ARL=t=>t=='ar0'?'↔ Flèche : '+S.m.team:t=='ar1'?'↔ Flèche : '+(S.m.opp||'Adv.'):'';
+function setArrow(o){if(lock())return;if(arrow()===o)return;add('ar'+o,null);toast('Flèche de possession : '+(o?(S.m.opp||'Adversaire'):S.m.team));draw();}
 function toPop(sd){pop({t:'Temps mort — '+(sd?S.m.opp||'Adversaire':S.m.team),sk:'Annuler',opts:[['30 s',()=>timeout(sd,30)],['60 s',()=>timeout(sd,60)]]});}
 function timeout(sd,n){stopClock();add(sd?'toa':'to',null);S.to={end:Date.now()+n*1000};toast('⏱ Temps mort '+n+' s');}
 setInterval(()=>{if(!S.to)return;const r=Math.ceil((S.to.end-Date.now())/1000);if(r<=0){S.to=null;beep();vib(400);draw();return;}const b=$('tob');if(b)b.textContent='⏱ Temps mort — '+r+' s';},300);
@@ -272,22 +295,27 @@ function scoreCard(){
   return `<div class="card"><b>Score par période</b><table><tr><th></th>${Object.keys(P).map(q=>`<th>${PL(+q)}</th>`).join('')}<th>Total</th></tr><tr><td>${esc(S.m.team)}</td>${Object.values(P).map(x=>`<td>${x[0]}</td>`).join('')}<td><b>${h}</b></td></tr><tr><td>${esc(S.m.opp||'Adversaire')}</td>${Object.values(P).map(x=>`<td>${x[1]}</td>`).join('')}<td><b>${a}</b></td></tr></table>
   <div class="mut" style="margin-top:8px">Écart de score au fil du match (en haut : ${esc(S.m.team)} devant)</div><svg viewBox="0 0 300 100" style="width:100%;background:var(--bg);border-radius:10px"><line x1="0" x2="300" y1="50" y2="50" stroke="var(--bd)"/>${seps}<polyline fill="none" stroke="#7c5cff" stroke-width="1.6" points="${pts}"/></svg></div>`;
 }
+function scoreFlow(){
+  const sc=e=>PTS[e.type]?[e.player>=1000?1:0,PTS[e.type]]:OPP[e.type]?[1,OPP[e.type]]:null,P={},sr=[{t:0,q:1,c:S.m.dur,h:0,a:0}];let h=0,a=0;
+  S.ev.filter(e=>sc(e)).map(e=>({t:tt(e.quarter,e.clock),q:e.quarter,c:e.clock,s:sc(e)})).sort((x,y)=>x.t-y.t).forEach(x=>{P[x.q]=P[x.q]||[0,0];P[x.q][x.s[0]]+=x.s[1];if(x.s[0])a+=x.s[1];else h+=x.s[1];sr.push({t:x.t,q:x.q,c:x.c,h,a});});
+  return{P,sr,h,a};
+}
 function lineCard(st){
-  const nm=x=>{const p=S.m.roster.find(p=>K(p)==x);return p?(p.name||'#'+p.n):'?'};
+  const nm=x=>{const p=S.m.roster.find(p=>K(p)==x);return p?(p.name?dn(p):'#'+p.n):'?'};
   const box=(sd,t)=>{const R=st.lu.filter(l=>l.sd==sd&&l.k.split(',').length==5).sort((x,y)=>y.pm-x.pm);return R.length?`<div style="margin-top:8px"><b>${esc(t)}</b></div>${R.map(l=>`<div class="row nw" style="border-bottom:1px solid var(--bd);padding:5px 0"><span style="flex:5;font-size:13px">${l.k.split(',').map(nm).map(esc).join(', ')}</span><b style="text-align:right">${l.pm>0?'+':''}${l.pm}</b></div>`).join('')}`:''};
   return `<div class="card"><b>+/- par cinq majeur</b>${box(0,S.m.team)||'<p class="mut">Aucun cinq complet pour le moment.</p>'}${box(1,S.m.opp||'Adversaire')}</div>`;
 }
 async function fetchAll(ids){let all=[],i=0;for(;;){const r=await sb.from('events').select('*').in('match_id',ids).order('ts').order('id').range(i,i+999);if(r.error||!r.data)return null;all=all.concat(r.data);if(r.data.length<1000)break;i+=1000;}return all;}
 let ckT=null,ot=null,ocode='';
-function pushClk(){if(!S.m||!S.m.code)return;clearTimeout(ckT);ckT=setTimeout(()=>{sb.from('matches').update({clk:{q:S.qt,rem:S.rem,run:S.run,at:Date.now()}}).eq('id',S.m.id).then(()=>{});},300);}
+function pushClk(){if(!S.m||S.duo=='follow'||(!S.m.code&&S.duo!='main'))return;clearTimeout(ckT);ckT=setTimeout(()=>{sb.from('matches').update({clk:clkObj()}).eq('id',S.m.id).then(()=>{});},300);}
 const loadQR=()=>window.qrcode?Promise.resolve():new Promise((ok,ko)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js';s.onload=ok;s.onerror=ko;document.head.appendChild(s);});
 async function share(){
   if(!S.m.code){const A='ABCDEFGHJKLMNPQRSTUVWXYZ23456789',code=Array.from(crypto.getRandomValues(new Uint8Array(6)),x=>A[x%A.length]).join('');
-    const r=await sb.from('matches').update({code,clk:{q:S.qt,rem:S.rem,run:S.run,at:Date.now()}}).eq('id',S.m.id);
+    const r=await sb.from('matches').update({code,clk:clkObj()}).eq('id',S.m.id);
     if(r.error){toast('Erreur : '+r.error.message);return;}S.m.code=code;}
   const base=location.href.split('#')[0].split('?')[0],u1=base+'?live='+S.m.code,u2=base+'?board='+S.m.code;let qr='';
   try{await loadQR();const q=qrcode(0,'M');q.addData(u1);q.make();qr=`<div style="display:inline-block;background:#fff;padding:6px;border-radius:10px;line-height:0">${q.createSvgTag(5,1)}</div>`}catch(e){}
-  pop({t:'Suivi en direct — code '+S.m.code,html:`<div style="text-align:center;margin:10px 0">${qr}<div class="mut" style="margin-top:6px">${qr?'Scanne pour suivre le match':'QR code indisponible (connexion ?)'}<br>Code à saisir sur la page de connexion : <b>${esc(S.m.code)}</b></div></div>`,sk:'Fermer',opts:[['📺 Ouvrir le scoreboard',()=>window.open(u2,'_blank')],['⛔ Arrêter le partage',stopShare]]});
+  pop({t:'Suivi en direct — code '+S.m.code,html:`<div style="text-align:center;margin:10px 0">${qr}<div class="mut" style="margin-top:6px">${qr?'Scanne pour suivre le match (stats complètes + bouton scoreboard)':'QR code indisponible (connexion ?)'}<br>Code à saisir sur la page de connexion : <b>${esc(S.m.code)}</b></div></div>`,sk:'Fermer',opts:[['🔗 Copier le lien de suivi',()=>{navigator.clipboard&&navigator.clipboard.writeText(u1).then(()=>toast('🔗 Lien copié'),()=>toast(u1))}],['📺 Ouvrir le scoreboard',()=>window.open(u2,'_blank')],['⛔ Arrêter le partage',stopShare]]});
 }
 async function stopShare(){const r=await sb.from('matches').update({code:null}).eq('id',S.m.id);if(r.error){toast('Erreur : '+r.error.message);return;}S.m.code=null;toast('Partage arrêté');draw();}
 const clkCol=()=>S.clk&&S.clk.run&&S.rem>0?'var(--ok)':'#f08c00';
@@ -296,8 +324,44 @@ async function obsPoll(first){
   const r=await sb.rpc('live_get',{c:ocode});
   if(r.error||!r.data||!r.data.m){if(first){S.err='Code invalide ou partage terminé';S.view='obsin';draw();}else{obsLeave();}return;}
   S.m=r.data.m;S.m.roster=S.m.roster||[];S.ev=(r.data.e||[]).sort((x,y)=>x.ts-y.ts);S.clk=S.m.clk;oClock();
-  if(first){S.obs=true;S.view=S.omode=='board'?'board':'live';wake();S.tab='dir';S.sel=null;S.panel=null;S.pop=null;clearInterval(ot);ot=setInterval(()=>obsPoll(),3000);}
+  if(first){S.obs=true;S.view=S.omode=='board'?'board':'live';wake();S.tab='box';S.sel=null;S.panel=null;S.pop=null;clearInterval(ot);ot=setInterval(()=>obsPoll(),3000);}
   draw();
+}
+let duoBusy=false;
+async function duoTick(){
+  if(!S.duo||S.obs||S.view!='live'||!S.m||duoBusy||!navigator.onLine)return;
+  if(document.querySelector('.ov')||S.edit)return;
+  duoBusy=true;
+  try{
+    const mid=S.m.id,ev=await fetchAll([mid]);
+    if(ev&&S.m&&S.m.id==mid&&S.duo&&!document.querySelector('.ov')&&!S.edit){
+      const dels=new Set(Q.d),loc=Q.i.filter(e=>e.match_id==mid),lid=new Set(loc.map(e=>e.id));
+      const nx=ev.filter(e=>!dels.has(e.id)&&!lid.has(e.id)).concat(loc).sort((a,b)=>a.ts-b.ts);
+      const sg=a=>a.map(e=>[e.id,e.type,e.player,e.quarter,e.clock,e.x,e.y].map(v=>v==null?'':v).join('|')).join(',');
+      let ch=false;
+      if(sg(nx)!=sg(S.ev)){S.ev=nx;cacheEv();ch=true;}
+      if(S.duo=='follow'){
+        const r=await sb.from('matches').select('clk,closed,final').eq('id',mid).single();
+        if(r.data){
+          if(r.data.clk){const pq=S.qt,pr=S.run;S.clk=r.data.clk;oClock();S.run=!!r.data.clk.run&&S.rem>0;if(S.qt!=pq||S.run!=pr)ch=true;}
+          if(!!r.data.closed!==!!S.m.closed){S.m.closed=r.data.closed;S.m.final=r.data.final;ch=true;}
+        }
+      }
+      if(ch&&!document.querySelector('.ov'))draw();
+    }
+  }catch(e){}
+  duoBusy=false;
+}
+setInterval(duoTick,3000);
+function duoMenu(){
+  pop({t:'👥 Saisie à deux',html:`<p class="mut" style="text-align:left">Deux personnes saisissent le <b>même match</b> en même temps (par exemple une par équipe) : chacune ouvre ce match avec son compte. Le <b>principal</b> tient le chrono ; le <b>second</b> le suit automatiquement et ne peut pas le modifier. Chacun ne peut annuler que ses propres saisies. Les saisies de l'autre arrivent en 3 secondes environ.</p>${S.duo?'<p>Mode actuel : <b>'+(S.duo=='main'?'principal (chrono)':'second (suit le chrono)')+'</b></p>':''}`,sk:'Fermer',opts:[['⏱ Je suis le principal',()=>setDuo('main')],['👀 Je suis le second',()=>setDuo('follow')],['❌ Désactiver',()=>setDuo(null)]]});
+}
+function setDuo(m){
+  S.duo=m;try{m?localStorage['d'+S.m.id]=m:localStorage.removeItem('d'+S.m.id)}catch(e){}
+  if(m=='follow'){S.run=false;clearInterval(tk);}
+  if(m=='main')pushClk();
+  toast(m=='main'?'⏱ Principal : tu tiens le chrono':m=='follow'?'👀 Second : le chrono suit le principal':'Saisie à deux désactivée');
+  if(m)setTimeout(duoTick,400);
 }
 function obsGo(){ocode=$('oc').value.trim().toUpperCase();if(ocode.length<4){S.err='Entre le code du match';return draw();}obsPoll(true);}
 function obsLeave(){
@@ -305,7 +369,7 @@ function obsLeave(){
   try{history.replaceState(null,'',location.pathname)}catch(e){}
   sb.auth.getSession().then(async r=>{if(r.data.session){S.user=r.data.session.user;await loadRole();home();}else{S.view='login';draw();}}).catch(()=>{S.view='login';draw();});
 }
-setInterval(()=>{if(S.obs&&S.clk){oClock();const e=$('oclk');if(e){e.textContent=mmss(Math.ceil(S.rem));if(S.view=='board')e.style.color=clkCol();}}},1000);
+setInterval(()=>{if(S.obs&&S.clk){oClock();const e=$('oclk');if(e){e.textContent=mmss(Math.ceil(S.rem));if(S.view=='board')e.style.color=clkCol();}}else if(S.duo=='follow'&&S.view=='live'&&S.clk){oClock();S.run=!!S.clk.run&&S.rem>0;const e=$('clk');if(e){e.textContent=mmss(Math.ceil(S.rem));e.classList.toggle('run',S.run);}}},1000);
 const seas=()=>[...new Set(GM().map(m=>m.season).filter(Boolean))];
 const pcn=(a,b)=>b?Math.round(a/b*100)+'%':'–';
 const avg=(p,f)=>(p.g.reduce((x,y)=>x+y[f],0)/p.gp).toFixed(1);
@@ -369,15 +433,17 @@ async function loadRole(){
   S.role=(navigator.onLine===false||/fetch|network/i.test(String(r.error.message||'')))?((()=>{try{return localStorage.lf_role}catch(e){}})()||'lecteur'):'admin';
 }
 const tp=()=>S.teams[S.te.i];
-const tcol=o=>((S.teams.find(t=>t.name==(o?S.m.opp:S.m.team))||{}).color)||'';
+const sty=o=>{if(S.obs){const x=S.clk&&S.clk.sty&&S.clk.sty[o];return x||{}}const t=S.teams.find(t=>t.name==(o?S.m.opp:S.m.team));return t?{c:t.color||'',l:t.logo||''}:{}};
+const clkObj=()=>({q:S.qt,rem:S.rem,run:S.run,at:Date.now(),sty:[sty(0),sty(1)]});
+const tcol=o=>sty(o).c||'';
 const av=(p,s=28)=>p&&p.photo?`<img class="av" style="width:${s}px;height:${s}px" src="${p.photo}">`:'';
 const av2=(u,nm,s)=>u?`<img class="av" style="width:${s}px;height:${s}px" src="${u}">`:`<span class="av" style="width:${s}px;height:${s}px">${esc((nm||'?').slice(0,2).toUpperCase())}</span>`;
-const lg=o=>{const t=S.teams.find(t=>t.name==(o?S.m.opp:S.m.team));return t&&t.logo?av2(t.logo,'',22):''};
+const lg=o=>{const x=sty(o);return x.l?av2(x.l,'',22):''};
 function tOpen(i){if(!canW()){toast('👁 Lecture seule');return}S.te={i};S.view='te';draw();}
 async function tSave(){const t=tp(),r=await sb.from('teams').upsert({name:t.name,players:t.players,logo:t.logo||null,color:t.color||null,updated_at:new Date().toISOString(),...(S.gid?{group_id:t.group_id||S.gid}:{})},{onConflict:'name'});if(r.error)toast('Erreur : '+r.error.message);}
 async function tLogo(inp){const f=inp.files[0];if(!f)return;const u=await upImg(f,'t/'+tp().name.replace(/[^a-z0-9]/gi,'_')+'.png');if(u){tp().logo=u;tSave();draw();}}
 function tColor(v){tp().color=v;tSave();}
-async function newTeam(){const nm=$('ntn').value.trim();if(!nm)return;if(S.teams.some(t=>t.name.toLowerCase()==nm.toLowerCase())){toast('Cette équipe existe déjà');return}S.teams.push({name:nm,players:[],group_id:S.gid||null});S.te={i:S.teams.length-1};await tSave();S.view='te';draw();}
+async function newTeam(){const nm=$('ntn').value.trim();if(!nm)return;if(S.teams.some(t=>t.name.toLowerCase()==nm.toLowerCase())){toast('Cette équipe existe déjà');return}if(TR().t.some(t=>t.name.toLowerCase()==nm.toLowerCase())){toast('Une équipe de ce nom est dans la corbeille : restaure-la ou supprime-la définitivement',4500);return}S.teams.push({name:nm,players:[],group_id:S.gid||null});S.te={i:S.teams.length-1};await tSave();S.view='te';draw();}
 function cropImg(file,png){return new Promise(async res=>{
   let bm;try{bm=await createImageBitmap(file)}catch(e){toast('Image illisible');return res(null)}
   const ov=document.createElement('div');ov.className='ov';
@@ -430,7 +496,37 @@ async function memTog(i,g,on){
   await loadMem();toast(on?'✅ Accès ajouté':'Accès retiré');draw();
 }
 async function grpNew(){const nm=$('gn').value.trim();if(!nm)return;const r=await sb.from('groups').insert({name:nm}).select().single();if(r.error){toast('Erreur : '+r.error.message);return}S.groups.push(r.data);S.groups.sort((x,y)=>x.name.localeCompare(y.name));cacheSet('groups',S.groups);toast('✅ Groupe créé');draw();}
-function grpDel(i){const g=S.groups[i];ask(`Supprimer le groupe <b>${esc(g.name)}</b> ?<br><span class="mut">Impossible s'il contient encore des équipes ou des matchs.</span>`,async()=>{const r=await sb.from('groups').delete().eq('id',g.id);if(r.error){toast('Suppression impossible : '+(/foreign|violates/i.test(r.error.message)?'ce groupe contient encore des données':r.error.message));return}S.groups=S.groups.filter(x=>x.id!=g.id);pickGroup();cacheSet('groups',S.groups);toast('🗑 Groupe supprimé');draw();});}
+const TRSQL="alter table matches add column if not exists deleted_at timestamptz;\nalter table teams add column if not exists deleted_at timestamptz;\nalter table groups add column if not exists deleted_at timestamptz;";
+function copySql(){navigator.clipboard&&navigator.clipboard.writeText(TRSQL).then(()=>toast('📋 SQL copié'),()=>toast('Copie impossible : sélectionne le texte'));}
+async function openTrash(){
+  S.view='trash';S.trOn=null;draw();
+  const a=await sb.from('matches').select('*').not('deleted_at','is',null).order('deleted_at',{ascending:false});
+  if(a.error){S.trOn=false;draw();return}
+  const b=await sb.from('teams').select('*').not('deleted_at','is',null),c=await sb.from('groups').select('*').not('deleted_at','is',null);
+  S.trash={m:a.data||[],t:b.error?[]:(b.data||[]),g:c.error?[]:(c.data||[])};S.trOn=true;draw();
+}
+async function trDo(k,it){
+  const tb={m:'matches',t:'teams',g:'groups'}[k],col=k=='t'?'name':'id';
+  const r=await sb.from(tb).delete().eq(col,it[col]);
+  if(r.error){toast('Suppression impossible : '+(/foreign|violates/i.test(r.error.message)?'des données y sont encore rattachées':r.error.message),4500);return false}
+  if(k=='m'){Q.i=Q.i.filter(e=>e.match_id!=it.id);Q.m=Q.m.filter(x=>x.id!=it.id);saveQ();try{localStorage.removeItem('c'+it.id)}catch(e){}}
+  const T=TR();T[k]=T[k].filter(x=>x!==it);return true;
+}
+function trPurge(k,i){const it=TR()[k][i];if(!it)return;ask(`Supprimer définitivement <b>${esc(it.name||(it.team+' vs '+(it.opp||'?')))}</b> ?<br><span class="mut">Impossible de revenir en arrière.</span>`,async()=>{if(await trDo(k,it))toast('🗑 Supprimé définitivement');draw();});}
+function trEmpty(){ask('Vider la corbeille ?<br><span class="mut">Tout sera définitivement supprimé (impossible de revenir en arrière).</span>',async()=>{const T=TR();for(const m of T.m.slice())await trDo('m',m);for(const t of T.t.slice())await trDo('t',t);if(S.role=='admin')for(const g of T.g.slice())await trDo('g',g);toast('🗑 Corbeille vidée');draw();});}
+async function trRestore(k,i){
+  const T=TR(),it=T[k][i];if(!it)return;
+  if(k!='g'&&it.group_id){const gi=T.g.findIndex(x=>x.id==it.group_id);if(gi>=0)await trRestore('g',gi);}
+  const col=k=='t'?'name':'id',tb={m:'matches',t:'teams',g:'groups'}[k],r=await upd(tb,col,it[col],{deleted_at:null});
+  if(r.e){toast('Erreur : '+r.e,4500);return}
+  T[k]=T[k].filter(x=>x!==it);delete it.deleted_at;
+  if(k=='m'){S.matches.push(it);S.matches.sort((x,y)=>new Date(y.created_at)-new Date(x.created_at));cacheSet('matches',S.matches);}
+  else if(k=='t'){S.teams.push(it);cacheSet('teams',S.teams);}
+  else{S.groups.push(it);S.groups.sort((x,y)=>x.name.localeCompare(y.name));cacheSet('groups',S.groups);pickGroup();}
+  toast('♻️ Restauré');draw();
+}
+function grpDel(i){const g=S.groups[i],nT=S.teams.filter(x=>x.group_id==g.id).length,nM=S.matches.filter(x=>x.group_id==g.id).length;if(nT||nM){toast('Ce groupe contient encore '+(nT?nT+' équipe'+(nT>1?'s':''):'')+(nT&&nM?' et ':'')+(nM?nM+' match'+(nM>1?'s':''):'')+' : supprime-les d\'abord',4500);return}ask(`Mettre le groupe <b>${esc(g.name)}</b> à la corbeille ?<br><span class="mut">Tu pourras le restaurer depuis la Corbeille.</span>`,async()=>{const iso=new Date().toISOString(),r=await upd('groups','id',g.id,{deleted_at:iso});if(r.e){toast(r.miss?noTr:'Erreur : '+r.e,5000);return}TR().g.unshift({...g,deleted_at:iso});S.groups=S.groups.filter(x=>x.id!=g.id);pickGroup();cacheSet('groups',S.groups);toast('🗑 Groupe mis à la corbeille');draw();});}
+function grpRen(i){const g=S.groups[i];ask(`Renommer le groupe <b>${esc(g.name)}</b><input id="grn" value="${esc(g.name)}" maxlength="40" style="margin-top:8px">`,async()=>{const nm=(($('grn')||{}).value||'').trim();if(!nm||nm==g.name)return;if(S.groups.some(x=>x.id!=g.id&&x.name.toLowerCase()==nm.toLowerCase())){toast('Un groupe porte déjà ce nom');return}const r=await upd('groups','id',g.id,{name:nm});if(r.e){toast('Renommage impossible : '+r.e,4500);return}g.name=nm;S.groups.sort((x,y)=>x.name.localeCompare(y.name));cacheSet('groups',S.groups);toast('✅ Groupe renommé');draw();});}
 function accPw(i){const p=$('pw'+i).value;if(p.length<6){toast('6 caractères minimum');return}accCall({action:'password',id:S.users[i].id,password:p});}
 function accDel(i){const u=S.users[i];ask(`Supprimer le compte <b>${esc(u.email||'')}</b> ?<br><span class="mut">Cette personne ne pourra plus se connecter.</span>`,()=>accCall({action:'delete',id:u.id}));}
 let CFG=Object.assign({size:'m',left:false,vib:true,snd:true,theme:'auto'},(()=>{try{return JSON.parse(localStorage.cfg||'{}')}catch(e){return {}}})());
@@ -438,23 +534,23 @@ function vib(n){if(CFG.vib&&navigator.vibrate)navigator.vibrate(n);}
 function applyCfg(){document.documentElement.dataset.theme=CFG.theme=='auto'?'':CFG.theme;document.body.className='sz-'+CFG.size+(CFG.left?' lh':'');}
 function setCfg(k,v){CFG[k]=v;localStorage.cfg=JSON.stringify(CFG);applyCfg();draw();}
 applyCfg();
-function initStart(){S.stt={};S.m.roster.forEach(p=>S.stt[K(p)]=1);S.panel='start';}
+function initStart(){S.stt={};S.m.roster.forEach(p=>S.stt[K(p)]=p.abs?0:1);S.panel='start';}
 function stTap(k,o){
-  const v=S.stt[k],n=v==2?1:2;
-  if(n==2&&S.m.roster.filter(p=>!!p.o==!!o&&S.stt[K(p)]==2).length>=5){toast('5 titulaires maximum');return}
+  const v=S.stt[k]==null?1:S.stt[k];let n=v==1?2:v==2?0:1;
+  if(n==2&&S.m.roster.filter(p=>!!p.o==!!o&&S.stt[K(p)]==2).length>=5){toast('5 titulaires maximum');n=0;}
   S.stt[k]=n;draw();
 }
 function startOk(){
   if(lock())return;const ts=Date.now();
-  S.m.roster.forEach(p=>{delete p.abs;if(S.stt[K(p)]==2)add('in',K(p),ts);});
+  S.m.roster.forEach(p=>{if(S.stt[K(p)]===0)p.abs=1;else delete p.abs;if(S.stt[K(p)]==2)add('in',K(p),ts);});
   S.stt=null;S.panel=null;persist();toast('✅ Composition enregistrée');draw();
 }
 const FT='<p class="mut" style="text-align:center;font-size:11px;margin:28px 0 8px">LaFeuille by Ludo Poiré (2026)</p>';
 function dlgNo(){S.dlg=null;draw();}
-function askPeriod(p){if(p==S.qt)return;ask(`Passer à <b>${PL(p)}</b> ?<br><span class="mut">Vérifie que toutes les stats de ${PL(S.qt)} sont enregistrées : le chrono sera remis à ${mmss(plen(p))}.</span>`,()=>setPeriod(p));}
-function lpS(){lpF=false;clearTimeout(lpT);lpT=setTimeout(()=>{lpF=true;vib(40);setClock();},600);}
+function askPeriod(p){if(S.duo=='follow'){toast('⏱ Le chrono est tenu par le saisisseur principal');return;}if(p==S.qt)return;ask(`Passer à <b>${PL(p)}</b> ?<br><span class="mut">Vérifie que toutes les stats de ${PL(S.qt)} sont enregistrées : le chrono sera remis à ${mmss(plen(p))}.</span>`,()=>setPeriod(p));}
+function lpS(){if(S.duo=='follow')return;lpF=false;clearTimeout(lpT);lpT=setTimeout(()=>{lpF=true;vib(40);setClock();},600);}
 function lpE(){clearTimeout(lpT);}
-function clockClick(){if(lpF){lpF=false;return;}clockToggle();}
+function clockClick(){if(S.duo=='follow'){toast('⏱ Le chrono est tenu par le saisisseur principal');return;}if(lpF){lpF=false;return;}clockToggle();}
 function saveEdit(){
   if(lock())return;
   const e=S.ev.find(x=>x.id==S.edit);if(!e)return;
@@ -471,17 +567,20 @@ function delEv(){
 function validSub(){if(lock())return;const ts=Date.now();S.so.forEach(n=>add('out',n,ts));S.si.forEach(n=>add('in',n,ts));S.sel=null;S.panel=null;S.so=[];S.si=[];toast('🔄 Changement enregistré');draw();}
 function undo(){
   if(lock())return;
-  let e=S.ev.pop();if(!e)return;
-  toast('↩ Annulé : '+(TL[e.type]?TL[e.type]+' — '+who(e.player):'changement'));
+  let e;
+  if(S.duo){for(let i=S.ev.length-1;i>=0;i--){if(S.mine&&S.mine.has(S.ev[i].id)){e=S.ev[i];break;}}if(!e){toast('Rien à annuler : tu ne peux annuler que tes propres saisies');return;}S.ev=S.ev.filter(x=>x!==e);}
+  else{e=S.ev.pop();}
+  if(!e)return;
+  toast('↩ Annulé : '+(TL[e.type]?TL[e.type]+' — '+who(e.player):e.type.slice(0,2)=='ar'?'flèche de possession':'changement'));
   const rm=x=>{const i=Q.i.findIndex(y=>y.id==x.id);if(i>=0)Q.i.splice(i,1);else Q.d.push(x.id)};
   rm(e);
-  if(e.type=='in'||e.type=='out'){let l;while((l=S.ev[S.ev.length-1])&&l.ts==e.ts&&(l.type=='in'||l.type=='out')){S.ev.pop();rm(l);}}
+  if(e.type=='in'||e.type=='out'){S.ev.filter(l=>l.ts==e.ts&&(l.type=='in'||l.type=='out')&&(!S.duo||(S.mine&&S.mine.has(l.id)))).forEach(l=>{S.ev=S.ev.filter(x=>x!==l);rm(l);});}
   saveQ();sync();draw();
 }
 const PTS={t2m:2,t3m:3,lfm:1},OPP={o1:1,o2:2,o3:3};
 function stats(pf=0){
-  const o={};S.m.roster.forEach(p=>o[K(p)]={k:K(p),o:p.o?1:0,n:p.n,name:p.name,photo:p.photo||'',pts:0,reb:0,ast:0,stl:0,blk:0,tov:0,pf:0,fr:0,ro:0,stint:0,t2m:0,t2x:0,t3m:0,t3x:0,lfm:0,lfx:0,tim:0,pm:0,ti:null});
-  const c=new Set(),now=tt(S.qt,Math.ceil(S.rem));let h=0,a=0;const to={h:0,a:0},lu={};const LU=sd=>{const k=[...c].filter(x=>(x>=1000)==!!sd).sort((x,y)=>x-y).join(',');return k?(lu[k]=lu[k]||{sd,k,pm:0}):null;};const ws=pf?start(pf):0,we=pf?ws+plen(pf):0,ov=(a,b)=>pf?Math.max(0,Math.min(b,we)-Math.max(a,ws)):b-a;
+  const o={};S.m.roster.forEach(p=>o[K(p)]={k:K(p),o:p.o?1:0,n:p.n,name:p.name,first:p.first||'',abs:p.abs?1:0,photo:p.photo||'',pts:0,reb:0,ast:0,stl:0,blk:0,tov:0,pf:0,fr:0,ro:0,stint:0,t2m:0,t2x:0,t3m:0,t3x:0,lfm:0,lfx:0,tim:0,pm:0,ti:null});
+  const c=new Set(),lt=S.ev.reduce((m,e)=>{const x=tt(e.quarter,e.clock);return x>m?x:m},0),now=Math.max(tt(S.qt,Math.ceil(S.rem))||0,lt);let h=0,a=0;const to={h:0,a:0},lu={};const LU=sd=>{const k=[...c].filter(x=>(x>=1000)==!!sd).sort((x,y)=>x-y).join(',');return k?(lu[k]=lu[k]||{sd,k,pm:0}):null;};const ws=pf?start(pf):0,we=pf?ws+plen(pf):0,ov=(a,b)=>pf?Math.max(0,Math.min(b,we)-Math.max(a,ws)):b-a;
   const pm=(side,v)=>{c.forEach(k=>{const s=o[k];if(s)s.pm+=(s.o==side?v:-v)});const A=LU(side),B=LU(side?0:1);if(A)A.pm+=v;if(B)B.pm-=v;};
   S.ev.forEach(e=>{
     const t=tt(e.quarter,e.clock),s=o[e.player];
@@ -505,17 +604,17 @@ function editP(k,o){if(!canW()){toast('👁 Lecture seule');return}S.pe={k,o};dr
 function tEdit(i){S.pe={t:1,i};draw();}
 async function saveP(){
   const n=parseInt($('pn').value);if(isNaN(n)){toast('Numéro requis');return}
-  const d={n,name:$('pnm').value.trim(),first:$('pfn').value.trim(),pos:$('pps').value},f=$('pph').files[0],E=S.pe;
+  const d={n,name:$('pnm').value.trim(),first:$('pfn').value.trim(),pos:$('pps').value},f=$('pph').files[0],E=S.pe,ab=$('pab')?$('pab').checked:null;
   const R=E.t?tp().players:S.m.roster,old=E.t?(E.i==null?null:R[E.i]):(E.k==null?null:R.find(p=>K(p)==E.k));
   const pid=(old&&old.pid)||crypto.randomUUID();
   if(f){toast('Envoi de la photo…');const u=await upImg(f,'p/'+pid+'.jpg');if(u)d.photo=u;}
-  if(!old){d.pid=pid;if(!E.t){d.k=nextK(E.o);if(E.o)d.o=1;}R.push(d);}
-  else{const k=old.k!=null?old.k:K(old);Object.assign(old,d);if(!E.t)old.k=k;if(!old.pid)old.pid=pid;}
+  if(!old){d.pid=pid;if(ab)d.abs=1;if(!E.t){d.k=nextK(E.o);if(E.o)d.o=1;}R.push(d);}
+  else{const k=old.k!=null?old.k:K(old);Object.assign(old,d);if(!E.t)old.k=k;if(!old.pid)old.pid=pid;if(ab!==null){if(ab)old.abs=1;else delete old.abs;}}
   S.pe=null;if(E.t)tSave();else persist();draw();
 }
 function delP(){const E=S.pe;if(E.t){tp().players.splice(E.i,1);tSave();}else{S.m.roster=S.m.roster.filter(p=>K(p)!=E.k);persist();}S.pe=null;draw();}
 function peH(){if(!S.pe)return '';const E=S.pe,p=(E.t?(E.i==null?null:tp().players[E.i]):(E.k==null?null:S.m.roster.find(p=>K(p)==E.k)))||{},isNew=E.t?E.i==null:E.k==null;
-  return `<div class="ov"><div class="card"><b>${isNew?'Nouveau joueur':'Modifier le joueur'}</b><div style="text-align:center;margin:6px 0">${av2(p.photo,p.name,56)}</div><label>Photo<input id="pph" type="file" accept="image/*"></label><label>Numéro<input id="pn" type="number" inputmode="numeric" value="${p.n??''}"></label><label>Nom<input id="pnm" value="${esc(p.name||'')}"></label><label>Prénom<input id="pfn" value="${esc(p.first||'')}"></label><label>Poste<select id="pps">${['','PG','SG','SF','PF','C'].map(x=>`<option ${x==p.pos?'selected':''}>${x}</option>`).join('')}</select></label><div class="row" style="margin-top:12px">${isNew?'':'<button style="color:var(--ko)" onclick="delP()">Supprimer</button>'}<button onclick="S.pe=null;draw()">Annuler</button><button class="p" onclick="saveP()">OK</button></div></div></div>`;}
+  return `<div class="ov"><div class="card"><b>${isNew?'Nouveau joueur':'Modifier le joueur'}</b><div style="text-align:center;margin:6px 0">${av2(p.photo,p.name,56)}</div><label>Photo<input id="pph" type="file" accept="image/*"></label><label>Numéro<input id="pn" type="number" inputmode="numeric" value="${p.n??''}"></label><label>Nom<input id="pnm" value="${esc(p.name||'')}"></label><label>Prénom<input id="pfn" value="${esc(p.first||'')}"></label><label>Poste<select id="pps">${['','PG','SG','SF','PF','C'].map(x=>`<option ${x==p.pos?'selected':''}>${x}</option>`).join('')}</select></label>${E.t?'':`<label style="display:flex;align-items:center"><input type="checkbox" id="pab" ${p.abs?'checked':''}>Absent à ce match</label>`}<div class="row" style="margin-top:12px">${isNew?'':'<button style="color:var(--ko)" onclick="delP()">Supprimer</button>'}<button onclick="S.pe=null;draw()">Annuler</button><button class="p" onclick="saveP()">OK</button></div></div></div>`;}
 async function saveTeam(o){
   const nm=o?S.m.opp:S.m.team;if(!nm){toast("Nom d'équipe manquant");return;}
   let nw=0;S.m.roster.forEach(p=>{if(!p.pid){p.pid=crypto.randomUUID();nw=1}});if(nw)persist();const players=S.m.roster.filter(p=>!!p.o==!!o).map(p=>({n:p.n,name:p.name,first:p.first||'',pos:p.pos||'',pid:p.pid,photo:p.photo||''}));
@@ -525,29 +624,31 @@ async function saveTeam(o){
 }
 function shotCard(o){const ev=S.ev.filter(e=>SH.includes(e.type)&&e.x!=null&&(e.player>=1000)==!!o);return `<div class="card"><b>Tirs — ${esc(o?S.m.opp||'Adversaire':S.m.team)}</b> <span class="mut">● réussi ○ raté (${ev.length})</span><svg viewBox="0 0 100 94" style="width:100%;color:var(--tx)">${COURT}${dots(ev)}</svg></div>`;}
 function exH(){if(!S.ex)return '';
-  const T=o=>{const rs=S.m.roster.filter(p=>!!p.o==o);return rs.length?`<label><input type="checkbox" checked onchange="document.querySelectorAll('.px${o?1:0}').forEach(c=>c.checked=this.checked)"><b>Toute l'équipe ${esc(o?S.m.opp||'Adversaire':S.m.team)}</b></label>${rs.map(p=>`<label style="margin:2px 0 2px 18px"><input class="pxk px${o?1:0}" type="checkbox" checked value="${K(p)}">#${p.n} ${esc(p.name)}</label>`).join('')}`:''};
-  return `<div class="ov"><div class="card"><h2>Exporter</h2><label>Période<select id="xp"><option value="0">Match complet</option>${Array.from({length:S.m.np+2},(_,i)=>`<option value="${i+1}">${PL(i+1)}</option>`).join('')}</select></label><label><input type="checkbox" id="xt" checked>Tableau de stats</label><label><input type="checkbox" id="xs" checked>Carte des tirs</label><hr>${T(0)}${T(1)}<div class="row" style="margin-top:12px"><button onclick="S.ex=false;draw()">Fermer</button><button class="p" onclick="doExport('csv')">CSV</button><button class="p" onclick="doExport('png')">PNG</button></div></div></div>`;}
+  const V=new Set(stats().rows.filter(vis).map(p=>p.k)),T=o=>{const rs=S.m.roster.filter(p=>!!p.o==o&&V.has(K(p)));return rs.length?`<label><input type="checkbox" checked onchange="document.querySelectorAll('.px${o?1:0}').forEach(c=>c.checked=this.checked)"><b>Toute l'équipe ${esc(o?S.m.opp||'Adversaire':S.m.team)}</b></label>${rs.map(p=>`<label style="margin:2px 0 2px 18px"><input class="pxk px${o?1:0}" type="checkbox" checked value="${K(p)}">#${p.n} ${esc(dn(p))}</label>`).join('')}`:''};
+  return `<div class="ov"><div class="card"><h2>Exporter</h2><label>Période<select id="xp"><option value="0">Match complet</option>${Array.from({length:S.m.np+2},(_,i)=>`<option value="${i+1}">${PL(i+1)}</option>`).join('')}</select></label><label><input type="checkbox" id="xt" checked>Tableau de stats</label><label><input type="checkbox" id="xs" checked>Carte des tirs</label><label><input type="checkbox" id="xe" checked>Courbes du score et de l'écart</label><hr>${T(0)}${T(1)}<div class="row" style="margin-top:12px"><button onclick="S.ex=false;draw()">Fermer</button><button class="p" onclick="doExport('csv')">CSV</button><button class="p" onclick="doExport('png')">PNG</button></div></div></div>`;}
 function dl(b,n){const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=n;a.click();}
 function doExport(fmt){
-  const per=parseInt($('xp').value)||0,wt=$('xt').checked,ws=$('xs').checked,ks=[...document.querySelectorAll('.pxk:checked')].map(c=>+c.value);
-  if(!ks.length||!(wt||ws)){toast('Choisis des joueurs et un contenu');return;}
+  const per=parseInt($('xp').value)||0,wt=$('xt').checked,ws=$('xs').checked,we=$('xe').checked,ks=[...document.querySelectorAll('.pxk:checked')].map(c=>+c.value);
+  if(((wt||ws)&&!ks.length)||!(wt||ws||we)){toast('Choisis des joueurs et un contenu');return;}
   const rows=stats(per).rows.filter(p=>ks.includes(p.k)),tn=p=>p.o?(S.m.opp||'Adversaire'):S.m.team;
   const shots=S.ev.filter(e=>SH.includes(e.type)&&e.x!=null&&ks.includes(e.player)&&(!per||e.quarter==per));
-  const nm=(S.m.team+'-vs-'+(S.m.opp||'adv')+'-'+(per?PL(per):'match')).replace(/\s/g,'_');
+  const nm=(S.m.team+'-vs-'+(S.m.opp||'adv')+'-'+(per?PL(per):'match')).replace(/\s/g,'_'),opn=S.m.opp||'Adversaire',sf=scoreFlow();
   const H=['Joueur','TIM','PTS','REB','PD','INT','CT','BP','F','FP','2P','3P','LF','+/-','EVAL'];
-  const R=rows.map(p=>['#'+p.n+' '+p.name,mmss(p.tim),p.pts,p.reb,p.ast,p.stl,p.blk,p.tov,p.pf,p.fr,p.t2m+'/'+(p.t2m+p.t2x),p.t3m+'/'+(p.t3m+p.t3x),p.lfm+'/'+(p.lfm+p.lfx),p.pm,EV(p)]);
+  const R=rows.map(p=>['#'+p.n+' '+dn(p),mmss(p.tim),p.pts,p.reb,p.ast,p.stl,p.blk,p.tov,p.pf,p.fr,p.t2m+'/'+(p.t2m+p.t2x),p.t3m+'/'+(p.t3m+p.t3x),p.lfm+'/'+(p.lfm+p.lfx),p.pm,EV(p)]);
   if(fmt=='csv'){
-    let o='';
+    let o='Match;'+S.m.team+' vs '+opn+'\nScore final;'+S.m.team+' '+sf.h+' - '+sf.a+' '+opn+'\n'+(per&&sf.P[per]?'Score '+PL(per)+';'+S.m.team+' '+sf.P[per][0]+' - '+sf.P[per][1]+' '+opn+'\n':'')+'\n';
+    if(we)o+=['Periode',S.m.team,opn,'Ecart'].join(';')+'\n'+Object.keys(sf.P).map(q=>[PL(+q),sf.P[q][0],sf.P[q][1],sf.P[q][0]-sf.P[q][1]].join(';')).join('\n')+'\n\n'+['Periode','Chrono',S.m.team,opn,'Ecart'].join(';')+'\n'+sf.sr.slice(1).map(r=>[PL(r.q),mmss(r.c),r.h,r.a,r.h-r.a].join(';')).join('\n')+'\n\n';
     if(wt)o+=['Equipe',...H].join(';')+'\n'+rows.map((p,i)=>[tn(p),...R[i]].join(';')).join('\n')+'\n';
-    if(ws)o+=(o?'\n':'')+'Equipe;Joueur;Tir;Periode;x;y\n'+shots.map(e=>{const p=S.m.roster.find(p=>K(p)==e.player)||{};return[tn(p),'#'+p.n+' '+p.name,TL[e.type],PL(e.quarter),e.x,e.y].join(';')}).join('\n');
+    if(ws)o+=(o?'\n':'')+'Equipe;Joueur;Tir;Periode;x;y\n'+shots.map(e=>{const p=S.m.roster.find(p=>K(p)==e.player)||{};return[tn(p),'#'+p.n+' '+dn(p),TL[e.type],PL(e.quarter),e.x,e.y].join(';')}).join('\n');
     return dl(new Blob(['\ufeff'+o],{type:'text/csv'}),nm+'.csv');
   }
   const W=1000,rh=28,tm=[0,1].filter(o=>rows.some(p=>!!p.o==!!o)||shots.some(e=>(e.player>=1000)==!!o));
-  const th=wt?(R.length+1)*rh+20:0,sh=ws&&tm.length?420:0;
-  const c=document.createElement('canvas');c.width=W;c.height=70+th+sh;const x=c.getContext('2d');
+  const th=wt?(R.length+1)*rh+20:0,sh=ws&&tm.length?420:0,eh=we?290:0;
+  const c=document.createElement('canvas');c.width=W;c.height=100+th+sh+eh;const x=c.getContext('2d');
   x.fillStyle='#fff';x.fillRect(0,0,W,c.height);x.fillStyle='#1b1740';x.font='bold 22px sans-serif';
   x.fillText(S.m.team+' vs '+(S.m.opp||'Adversaire')+' — '+$('xp').selectedOptions[0].text,20,38);
-  let y=60;const cw=(W-290)/14;
+  x.font='bold 20px sans-serif';x.fillStyle='#7c5cff';x.fillText('Score final : '+S.m.team+' '+sf.h+' – '+sf.a+' '+opn+(per&&sf.P[per]?'   ·   '+PL(per)+' : '+sf.P[per][0]+' – '+sf.P[per][1]:''),20,66);
+  let y=84;const cw=(W-290)/14;
   if(wt){
     x.font='bold 14px sans-serif';x.fillStyle='#7c5cff';x.fillRect(10,y,W-20,rh);x.fillStyle='#fff';
     H.forEach((h,i)=>x.fillText(h,i?280+(i-1)*cw+4:20,y+19));y+=rh;x.font='14px sans-serif';
@@ -560,16 +661,44 @@ function doExport(fmt){
     shots.filter(e=>(e.player>=1000)==!!o).forEach(e=>{if(e.type[2]=='m'){x.fillStyle='#12b886';x.beginPath();x.arc(e.x,e.y,1.8,0,7);x.fill();}else{x.strokeStyle='#f0555e';x.lineWidth=.9;x.beginPath();x.arc(e.x,e.y,1.7,0,7);x.stroke();}});
     x.restore();x.fillStyle='#1b1740';x.font='bold 16px sans-serif';x.fillText(o?S.m.opp||'Adversaire':S.m.team,ox,y+16);
   });
+  if(we){
+    const cy=y+sh+30,tot=Math.max(start(S.m.np+1),sf.sr[sf.sr.length-1].t,1),cw2=470,ch=200,mx=Math.max(10,Math.ceil(Math.max(sf.h,sf.a)/10)*10),dm=Math.max(5,...sf.sr.map(r=>Math.abs(r.h-r.a)));
+    const plot=(ox,ttl,lo,hi,sers)=>{
+      const X=t=>ox+t/tot*cw2,Y=v=>cy+ch-(v-lo)/(hi-lo)*ch;
+      x.fillStyle='#f6f4ff';x.fillRect(ox,cy,cw2,ch);x.font='bold 15px sans-serif';x.fillStyle='#1b1740';x.fillText(ttl,ox,cy-10);
+      x.font='11px sans-serif';x.strokeStyle='#d6d1f5';x.lineWidth=1;
+      for(let p=1;p<=S.m.np;p++){const px=X(start(p));if(p>1){x.beginPath();x.moveTo(px,cy);x.lineTo(px,cy+ch);x.stroke();}x.fillStyle='#7a76a3';x.fillText(PL(p),px+4,cy+ch-5);}
+      if(lo<0){x.strokeStyle='#9d98c9';x.beginPath();x.moveTo(ox,Y(0));x.lineTo(ox+cw2,Y(0));x.stroke();}
+      x.fillStyle='#7a76a3';x.fillText(String(hi),ox+4,cy+13);x.fillText(String(lo),ox+4,cy+ch-18);
+      sers.forEach(s=>{x.strokeStyle=s.c;x.lineWidth=2.5;x.beginPath();sf.sr.forEach((r,i)=>{const px=X(r.t);if(!i)x.moveTo(px,Y(s.f(r)));else{x.lineTo(px,Y(s.f(sf.sr[i-1])));x.lineTo(px,Y(s.f(r)));}});x.stroke();});
+    };
+    plot(20,'Évolution du score',0,mx,[{c:'#7c5cff',f:r=>r.h},{c:'#f08c00',f:r=>r.a}]);
+    plot(510,'Écart de score (final '+(sf.h-sf.a>0?'+':'')+(sf.h-sf.a)+')',-dm,dm,[{c:'#7c5cff',f:r=>r.h-r.a}]);
+    x.font='bold 13px sans-serif';x.fillStyle='#7c5cff';x.fillText('■ '+S.m.team,20,cy+ch+22);x.fillStyle='#f08c00';x.fillText('■ '+opn,20+x.measureText('■ '+S.m.team).width+24,cy+ch+22);
+    x.fillStyle='#7a76a3';x.fillText('En haut : '+S.m.team+' devant',510,cy+ch+22);
+  }
   c.toBlob(b=>dl(b,nm+'.png'));
 }
 /* affichage */
 let lastVk='';
 function draw(){
-  const a=$('app');
+  const a=$('app');document.body.classList.toggle('bdv',S.view=='board');
   const vk=S.view+S.tab+S.panel+S.edit+(S.pop?1:0)+(S.dlg?1:0)+(S.pe?1:0)+(S.ex?1:0)+(S.ck?1:0);a.className=vk!=lastVk?'fx':'';lastVk=vk;
   if(S.view=='board'){
     const st=stats(),fq=n=>`<div style="transform:scale(2.2);transform-origin:top center;margin:8px 0 24px">${fsq(n)}</div>`,nmz='font-size:clamp(18px,4vw,42px);font-weight:700',big='font-size:clamp(70px,22vw,230px);font-weight:800;line-height:1';
-    a.innerHTML=`<div style="display:flex;flex-direction:column;min-height:92vh;justify-content:center;text-align:center"><div class="row nw" style="align-items:flex-start"><div><div style="${nmz}">${esc(S.m.team)}</div><div style="${big}">${st.h}</div>${fq(tfl(0))}</div><div style="flex:0 0 auto;padding:0 2vw"><div style="${nmz}">${PL(S.qt)}</div><div id="oclk" style="font-size:clamp(34px,10vw,120px);font-weight:800;color:${clkCol()}">${mmss(Math.ceil(S.rem))}</div></div><div><div style="${nmz}">${esc(S.m.opp||'Adversaire')}</div><div style="${big}">${st.a}</div>${fq(tfl(1))}</div></div><div class="row nw" style="justify-content:center;margin-top:10px"><button class="nf" onclick="obsLeave()">← Quitter</button><button class="nf" onclick="document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen()">⛶ Plein écran</button></div></div>`;return;
+    const side=(o,nm,sc)=>{const x=sty(o),c=/^#[0-9a-f]{6}$/i.test(x.c||'')?x.c:(o?'#f08c00':'#7c5cff');return `<div style="flex:1 1 0;min-width:0;border-radius:20px;border-top:12px solid ${c};background:${c}22;padding:10px 6px 0">${x.l?`<img src="${esc(x.l)}" alt="" style="display:block;margin:0 auto 4px;height:clamp(40px,9vw,110px);max-width:80%;object-fit:contain">`:''}<div style="${nmz}">${esc(nm)}</div><div style="${big}">${sc}</div>${fq(tfl(o))}<div style="height:clamp(24px,4vw,48px);font-size:clamp(18px,3.4vw,40px);font-weight:800;color:var(--ko)">${tfl(o?0:1)>=5?'BONUS':''}</div></div>`};
+    const ar=arrow();
+    a.innerHTML=`<div style="display:flex;flex-direction:column;min-height:92vh;justify-content:center;text-align:center"><div class="row nw" style="align-items:flex-start;gap:1.5vw">${side(0,S.m.team,st.h)}<div style="flex:0 0 auto;padding:0 1vw"><div style="${nmz}">${PL(S.qt)}</div><div id="oclk" style="font-size:clamp(34px,10vw,120px);font-weight:800;color:${clkCol()}">${mmss(Math.ceil(S.rem))}</div>${ar!=null?`<div style="font-size:clamp(34px,8vw,90px);line-height:1">${ar?'▶':'◀'}</div><div class="mut" style="font-size:clamp(12px,1.6vw,20px)">possession</div>`:''}</div>${side(1,S.m.opp||'Adversaire',st.a)}</div><div class="row nw" style="justify-content:center;margin-top:10px"><button class="nf" onclick="obsLeave()">← Quitter</button><button class="nf" onclick="document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen()">⛶ Plein écran</button><button class="nf" onclick="S.view='live';S.tab='box';draw()">📊 Stats</button></div></div>`;return;
+  }
+  if(S.view=='trash'){
+    const T=TR(),adm=S.role=='admin',n=trN();
+    const row=(k,i,lab,x)=>`<div class="row nw" style="align-items:center;margin-top:8px"><span style="flex:3">${lab}<br><span class="mut">supprimé le ${new Date(x.deleted_at).toLocaleString('fr-FR')}</span></span><button class="nf" onclick="trRestore('${k}',${i})">♻️ Restaurer</button><button class="nf" onclick="trPurge('${k}',${i})">🗑</button></div>`;
+    const sec=(t,h)=>h?`<div class="card"><b>${t}</b>${h}</div>`:'';
+    let inner;
+    if(S.trOn===false)inner=`<div class="card"><b>La corbeille n'est pas encore activée</b><p class="mut">Une seule fois : ouvre ton projet <b>Supabase</b> → menu <b>SQL Editor</b> → colle le texte ci-dessous → clique sur <b>Run</b>. Reviens ensuite ici et touche « Revérifier ».</p><pre style="white-space:pre-wrap;font-size:12px;background:var(--bg);padding:8px;border-radius:8px">${TRSQL}</pre><div class="row"><button onclick="copySql()">📋 Copier le SQL</button><button class="p" onclick="openTrash()">🔄 Revérifier</button></div></div>`;
+    else if(S.trOn==null)inner='<p class="mut">Chargement…</p>';
+    else inner=n?sec('Matchs',T.m.map((m,i)=>row('m',i,`<b>${esc(m.team)}</b> vs ${esc(m.opp||'?')}${m.closed&&m.final?' · '+m.final.h+' : '+m.final.a:''}`,m)).join(''))+sec('Équipes',T.t.map((t,i)=>row('t',i,`<b>${esc(t.name)}</b> · ${(t.players||[]).length} joueur${(t.players||[]).length>1?'s':''}`,t)).join(''))+(adm?sec('Groupes',T.g.map((g,i)=>row('g',i,`<b>${esc(g.name)}</b>`,g)).join('')):'')+`<button style="width:100%;margin-top:10px;color:var(--ko)" onclick="trEmpty()">Vider la corbeille</button>`:'<p class="mut">La corbeille est vide.</p>';
+    a.innerHTML=`<div class="row nw"><button class="nf" onclick="home()">←</button><h1>🗑 Corbeille</h1></div>`+inner+FT+dlgH();return;
   }
   if(S.view=='cfg'){
     const seg=(k,o)=>`<div class="row nw" style="margin:6px 0 12px">${o.map(x=>`<button class="${CFG[k]==x[0]?'p':''}" onclick="setCfg('${k}','${x[0]}')">${x[1]}</button>`).join('')}</div>`,tg=(k,l)=>`<label style="display:flex;justify-content:space-between;align-items:center;margin:12px 0"><span>${l}</span><input type="checkbox" ${CFG[k]?'checked':''} onchange="setCfg('${k}',this.checked)"></label>`;
@@ -590,7 +719,7 @@ function draw(){
       <div class="card"><div class="row">${['pts','reb','ast','eval'].map(m=>`<button class="${q.met==m?'p':''}" onclick="S.ss.met='${m}';draw()">${m.toUpperCase()}</button>`).join('')}</div><svg viewBox="0 0 300 118" style="width:100%;color:var(--tx);margin-top:8px">${bars}</svg></div>
       <div class="card"><b>Matchs</b>${p.g.slice().reverse().map(x=>`<div class="row nw" style="padding:5px 0;border-bottom:1px solid var(--bd)"><span class="mut nf" style="width:52px">${new Date(x.d).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'})}</span><span>vs ${esc(x.adv)}</span><span style="text-align:right;flex:2">${x.pts} pts · ${x.reb} reb · ${x.ast} pd · éval ${x.eval}</span></div>`).join('')}</div>`;
     }else if(!A.length)b='<p class="mut">Aucun match comptabilisé pour cette sélection.</p>';
-    else b=`<div class="card"><b>${esc(q.team)}</b> · ${q.rec.n} match${q.rec.n>1?'s':''} · ${q.rec.W} V – ${q.rec.L} D · ${(q.rec.pf/q.rec.n).toFixed(1)} pts marqués / ${(q.rec.pa/q.rec.n).toFixed(1)} encaissés</div><div class="card" style="overflow-x:auto"><table><tr><th>Joueur</th><th>MJ</th><th>MIN</th><th>PTS</th><th>REB</th><th>PD</th><th>INT</th><th>CT</th><th>BP</th><th>2P</th><th>3P</th><th>LF</th><th>EVAL</th></tr>${A.map((p,i)=>`<tr onclick="S.ss.pl=${i};draw()" style="cursor:pointer"><td>#${p.n} ${esc(p.name)}</td><td>${p.gp}</td><td>${mmss(p.tim/p.gp)}</td><td><b>${avg(p,'pts')}</b></td><td>${avg(p,'reb')}</td><td>${avg(p,'ast')}</td><td>${(p.stl/p.gp).toFixed(1)}</td><td>${(p.blk/p.gp).toFixed(1)}</td><td>${(p.tov/p.gp).toFixed(1)}</td><td>${pcn(p.t2m,p.t2m+p.t2x)}</td><td>${pcn(p.t3m,p.t3m+p.t3x)}</td><td>${pcn(p.lfm,p.lfm+p.lfx)}</td><td>${avg(p,'eval')}</td></tr>`).join('')}</table><p class="mut">Moyennes par match. Touche un joueur pour sa fiche.</p></div>`;
+    else b=`<div class="card"><b>${esc(q.team)}</b> · ${q.rec.n} match${q.rec.n>1?'s':''} · ${q.rec.W} V – ${q.rec.L} D · ${(q.rec.pf/q.rec.n).toFixed(1)} pts marqués / ${(q.rec.pa/q.rec.n).toFixed(1)} encaissés</div><div class="card" style="overflow-x:auto"><table><tr><th>Joueur</th><th>MJ</th><th>MIN</th><th>PTS</th><th>REB</th><th>PD</th><th>INT</th><th>CT</th><th>BP</th><th>2P</th><th>3P</th><th>LF</th><th>EVAL</th></tr>${A.map((p,i)=>`<tr onclick="S.ss.pl=${i};draw()" style="cursor:pointer"><td>#${p.n} ${esc(dn(p))}</td><td>${p.gp}</td><td>${mmss(p.tim/p.gp)}</td><td><b>${avg(p,'pts')}</b></td><td>${avg(p,'reb')}</td><td>${avg(p,'ast')}</td><td>${(p.stl/p.gp).toFixed(1)}</td><td>${(p.blk/p.gp).toFixed(1)}</td><td>${(p.tov/p.gp).toFixed(1)}</td><td>${pcn(p.t2m,p.t2m+p.t2x)}</td><td>${pcn(p.t3m,p.t3m+p.t3x)}</td><td>${pcn(p.lfm,p.lfm+p.lfx)}</td><td>${avg(p,'eval')}</td></tr>`).join('')}</table><p class="mut">Moyennes par match. Touche un joueur pour sa fiche.</p></div>`;
     a.innerHTML=hd+(q.pl!=null?'':flt)+b;return;
   }
   if(S.view=='login'){a.innerHTML=`<h1>🏀 LaFeuille</h1><div class="card"><input id="em" type="email" placeholder="Identifiant (e-mail)"><input id="pw" type="password" placeholder="Mot de passe"><button class="p" style="width:100%;margin-top:6px" onclick="login()">Connexion</button><p class="err">${S.err}</p></div><button style="width:100%" onclick="S.omode='follow';S.view='obsin';S.err='';draw()">👀 Suivre un match en direct (sans compte)</button><button style="width:100%;margin-top:8px" onclick="S.omode='board';S.view='obsin';S.err='';draw()">📺 Scoreboard (sans compte)</button>`+FT;return;}
@@ -604,7 +733,7 @@ function draw(){
     const U=S.users,RL={admin:'Administrateur',stat:'Statisticien',lecteur:'Lecteur'},G=S.groups||[],M=S.mem||{};
     a.innerHTML=`<div class="row nw"><button class="nf" onclick="home()">←</button><h1>Comptes</h1></div><p class="err">${esc(S.err)}</p>
     <div class="card"><b>Créer un compte</b><input id="ae" type="email" placeholder="E-mail (identifiant)"><input id="ap" type="text" placeholder="Mot de passe (6 caractères min.)"><select id="ar"><option value="stat">Statisticien (saisie)</option><option value="lecteur">Lecteur (consultation)</option><option value="admin">Administrateur</option></select><div class="mut" style="margin-top:6px">Groupes accessibles (inutile pour un administrateur)</div>${G.map(g=>`<label style="display:flex;gap:6px;align-items:center;margin:4px 0"><input type="checkbox" class="ang" value="${g.id}" ${g.id==S.gid?'checked':''}>${esc(g.name)}</label>`).join('')}<button class="p" style="width:100%;margin-top:6px" onclick="accNew()">Créer le compte</button></div>
-    <div class="card"><b>Groupes</b>${G.map((g,i)=>`<div class="row nw" style="align-items:center;margin-top:6px"><span>${esc(g.name)}</span><button class="nf" onclick="grpDel(${i})">🗑</button></div>`).join('')}<div class="row nw" style="margin-top:8px"><input id="gn" placeholder="Nouveau groupe (ex. U15)"><button class="nf p" onclick="grpNew()">＋ Créer</button></div></div>
+    <div class="card"><b>Groupes</b>${G.map((g,i)=>`<div class="row nw" style="align-items:center;margin-top:6px"><span style="flex:3">${esc(g.name)}</span><button class="nf" onclick="grpRen(${i})">✏️</button><button class="nf" onclick="grpDel(${i})">🗑</button></div>`).join('')}<div class="row nw" style="margin-top:8px"><input id="gn" placeholder="Nouveau groupe (ex. U15)"><button class="nf p" onclick="grpNew()">＋ Créer</button></div></div>
     ${U?U.map((u,i)=>`<div class="card"><b>${esc(u.email||'')}</b><div class="row nw" style="margin-top:6px"><select onchange="accCall({action:'role',id:S.users[${i}].id,role:this.value})">${Object.keys(RL).map(r=>`<option value="${r}" ${u.role==r?'selected':''}>${RL[r]}</option>`).join('')}</select><button class="nf" onclick="accDel(${i})">🗑</button></div>${u.role=='admin'?'<div class="mut" style="margin-top:6px">Administrateur : accès à tous les groupes</div>':`<div class="mut" style="margin-top:6px">Groupes accessibles</div>${G.map(g=>`<label style="display:flex;gap:6px;align-items:center;margin:4px 0"><input type="checkbox" ${(M[u.id]||[]).includes(g.id)?'checked':''} onchange="memTog(${i},'${g.id}',this.checked)">${esc(g.name)}</label>`).join('')}`}<div class="row nw" style="margin-top:6px"><input id="pw${i}" type="text" placeholder="Nouveau mot de passe"><button class="nf" onclick="accPw(${i})">🔑</button></div></div>`).join(''):'<p class="mut">Chargement…</p>'}`+dlgH();return;
   }
   if(S.view=='teams'){
@@ -617,26 +746,26 @@ function draw(){
     ${canW()?`<div class="card"><h2>Nouveau match</h2>${['tm','op'].map((id,i)=>`<label>${i?'Adversaire':'Mon équipe'}<select id="${id}" onchange="document.getElementById('${id}n').style.display=this.value=='__new'?'block':'none'"><option value="">${i?'— à définir plus tard —':'— choisir une équipe —'}</option>${GT().map(t=>`<option>${esc(t.name)}</option>`).join('')}<option value="__new">➕ Nouvelle équipe…</option></select><input id="${id}n" placeholder="Nom de la nouvelle équipe" style="display:none"></label>`).join('')}
     <label>Saison<select id="sea" onchange="document.getElementById('sean').style.display=this.value=='__new'?'block':'none'">${seas().map(x=>`<option>${esc(x)}</option>`).join('')}<option value="__new">➕ Nouvelle saison…</option></select><input id="sean" placeholder="Ex. 2026-2027" style="display:${seas().length?'none':'block'}"></label><label><input type="checkbox" id="ins" checked>Compter dans les stats de saison</label>
     <div class="row"><label>Périodes<input id="np" type="number" inputmode="numeric" value="4"></label><label>Durée (min)<input id="du" type="number" inputmode="numeric" value="10"></label></div>
-    <p class="mut">Une équipe enregistrée importe son effectif. Une nouvelle équipe se complète dans l'onglet Effectif (puis 💾 pour la retrouver la prochaine fois).</p><button class="p" style="width:100%" onclick="createMatch()">Créer et démarrer</button><p class="err">${S.err}</p></div>`:''}<div class="row" style="margin-top:16px">${S.role=='admin'?'<button onclick="openAcc()">🔐 Comptes</button>':''}<button onclick="backup()">⬇ Sauvegarde</button><button onclick="document.getElementById('rf').click()">⬆ Restaurer</button><input type="file" id="rf" accept=".json" hidden onchange="restore(this)"></div>`+FT+gpH()+dlgH();return;}
+    <p class="mut">Une équipe enregistrée importe son effectif. Une nouvelle équipe se complète dans l'onglet Effectif (puis 💾 pour la retrouver la prochaine fois).</p><button class="p" style="width:100%" onclick="createMatch()">Créer et démarrer</button><p class="err">${S.err}</p></div>`:''}<div class="row" style="margin-top:16px">${S.role=='admin'?'<button onclick="openAcc()">🔐 Comptes</button>':''}<button onclick="openTrash()">🗑 Corbeille${trN()?' ('+trN()+')':''}</button><button onclick="backup()">⬇ Sauvegarde</button><button onclick="document.getElementById('rf').click()">⬆ Restaurer</button><input type="file" id="rf" accept=".json" hidden onchange="restore(this)"></div>`+FT+gpH()+dlgH();return;}
   const st=stats(),ons=st.c,by={};st.rows.forEach(p=>by[p.k]=p);
-  const hOn=ons.filter(k=>k<1000),oOn=ons.filter(k=>k>=1000),oN=S.m.opp||'Adversaire';
-  const pb=(k,f,cl)=>{const p=by[k];return `<button class="pl ${cl}${p.pf>=5?' f5':p.pf==4?' f4':''}${p.stint>=LIM?' long':''}" style="flex:0 0 auto;border-top:3px solid ${tcol(p.o)||'var(--bd)'}" onclick="${f}(${k})">${p.photo?av(p,24):''}#${p.n}<small>${esc(p.name)}</small><small>${p.pts}pt ${p.pf}F</small></button>`};
-  const head=`<div class="row"><button class="nf" onclick="${S.obs?'obsLeave()':'home()'}">←</button><div class="sc">${lg(0)} ${esc(S.m.team.slice(0,10))} ${st.h} : ${st.a} ${esc(oN.slice(0,10))} ${lg(1)}</div>${S.obs?'<span class="mut nf">🔴 direct</span>':`<button class="nf" onclick="share()">📡${S.m.code?' '+S.m.code:''}</button><span class="mut nf" id="pend">${pending()}</span>`}</div>
-  <div class="tabs row">${(S.obs?[['dir','Direct'],['box','Stats'],['pbp','Play-by-play']]:[['rec','Saisie'],['box','Stats'],['ros','Effectif']]).map(t=>`<button class="${S.tab==t[0]?'on':''}" onclick="S.tab='${t[0]}';draw()">${t[1]}</button>`).join('')}</div>`;
+  const srt=a=>a.slice().sort((x,y)=>by[x].n-by[y].n),hOn=srt(ons.filter(k=>k<1000)),oOn=srt(ons.filter(k=>k>=1000)),oN=S.m.opp||'Adversaire';
+  const pb=(k,f,cl)=>{const p=by[k];return `<button class="pl ${cl}${p.pf>=5?' f5':p.pf==4?' f4':''}${p.stint>=LIM?' long':''}" style="flex:0 0 auto;border-top:3px solid ${tcol(p.o)||'var(--bd)'}" onclick="${f}(${k})">${p.photo?av(p,24):''}#${p.n}<small>${esc(dn(p))}</small><small>${p.pts}pt ${p.pf}F</small></button>`};
+  const head=`<div class="row"><button class="nf" onclick="${S.obs?'obsLeave()':'home()'}">←</button><div class="sc">${lg(0)} ${esc(S.m.team.slice(0,10))} ${st.h} : ${st.a} ${esc(oN.slice(0,10))} ${lg(1)}</div>${S.obs?'<span class="mut nf">🔴 direct</span>':`<button class="nf" onclick="share()">📡${S.m.code?' '+S.m.code:''}</button><button class="nf" onclick="duoMenu()">👥${S.duo=='main'?' ⏱':S.duo=='follow'?' 👀':''}</button><span class="nf" id="pend" style="font-size:12px;padding:4px 8px;border:1px solid var(--bd);border-radius:12px;white-space:nowrap">${pending()}</span>`}</div>
+  <div class="tabs row">${(S.obs?[['dir','Direct'],['box','Stats'],['pbp','Play-by-play']]:[['rec','Saisie'],['box','Stats'],['ros','Effectif']]).map(t=>`<button class="${S.tab==t[0]?'on':''}" onclick="S.tab='${t[0]}';draw()">${t[1]}</button>`).join('')}</div>${S.obs?'<button style="width:100%;margin:6px 0" onclick="S.view=\'board\';draw()">📺 Passer en mode scoreboard (projection)</button>':''}`;
   let body='';
   if(S.tab=='dir'){
-    const pr=k=>{const p=by[k];return `<div class="row nw" style="padding:6px 0;border-bottom:1px solid var(--bd)"><span><b>#${p.n}</b> ${esc(p.name)}</span><span class="mut" style="text-align:right;flex:2">${p.pts} pts · ${p.reb} reb · ${p.ast} pd · ${p.pf} F</span></div>`};
-    body=`<div class="sc" style="margin:10px 0">${PL(S.qt)} · <span id="oclk">${mmss(Math.ceil(S.rem))}</span></div><div class="card"><div class="tl"><b>${esc(S.m.team)}</b>${fsq(tfl(0))}</div>${hOn.map(pr).join('')||'<p class="mut">—</p>'}</div><div class="card"><div class="tl"><b>${esc(oN)}</b>${fsq(tfl(1))}</div>${oOn.map(pr).join('')||'<p class="mut">—</p>'}</div>`;
+    const pr=k=>{const p=by[k];return `<div class="row nw" style="padding:6px 0;border-bottom:1px solid var(--bd)"><span><b>#${p.n}</b> ${esc(dn(p))}</span><span class="mut" style="text-align:right;flex:2">${p.pts} pts · ${p.reb} reb · ${p.ast} pd · ${p.pf} F</span></div>`};
+    body=`<div class="sc" style="margin:10px 0">${PL(S.qt)} · <span id="oclk">${mmss(Math.ceil(S.rem))}</span>${arrow()!=null?' · ⇄ '+esc(arrow()?(S.m.opp||'Adv.'):S.m.team):''}</div><div class="card"><div class="tl"><span><b>${esc(S.m.team)}</b> ${bonus(0)}</span>${fsq(tfl(0))}</div>${hOn.map(pr).join('')||'<p class="mut">—</p>'}</div><div class="card"><div class="tl"><span><b>${esc(oN)}</b> ${bonus(1)}</span>${fsq(tfl(1))}</div>${oOn.map(pr).join('')||'<p class="mut">—</p>'}</div>`;
   }else if(S.tab=='pbp'){
-    body=`<div class="card">${S.ev.slice().reverse().slice(0,300).map(e=>`<div class="row nw" style="padding:5px 0;border-bottom:1px solid var(--bd)"><span class="mut nf" style="width:72px">${PL(e.quarter)} ${mmss(e.clock)}</span><span>${e.type=='in'?'🔼 Entrée':e.type=='out'?'🔽 Sortie':'<b>'+(TL[e.type]||e.type)+'</b>'}${e.player!=null?' — '+esc(who(e.player)):''}</span></div>`).join('')||'<p class="mut">Aucun évènement.</p>'}</div>`;
+    body=`<div class="card">${S.ev.slice().reverse().slice(0,300).map(e=>`<div class="row nw" style="padding:5px 0;border-bottom:1px solid var(--bd)"><span class="mut nf" style="width:72px">${PL(e.quarter)} ${mmss(e.clock)}</span><span>${e.type=='in'?'🔼 Entrée':e.type=='out'?'🔽 Sortie':'<b>'+(TL[e.type]||ARL(e.type)||e.type)+'</b>'}${e.player!=null?' — '+esc(who(e.player)):''}</span></div>`).join('')||'<p class="mut">Aucun évènement.</p>'}</div>`;
   }else if(S.tab=='rec'&&S.panel=='start'){
-    const sec=(o,nm)=>{const rs=S.m.roster.filter(p=>!!p.o==!!o).sort((x,y)=>x.n-y.n);return rs.length?`<b>${esc(nm)}</b> <span class="mut">(${rs.filter(p=>S.stt[K(p)]==2).length}/5 titulaires)</span><div class="row" style="margin:6px 0 14px">${rs.map(p=>{const v=S.stt[K(p)];return `<button class="pl ${v==2?'sw':'on'}" style="flex:0 0 auto" onclick="stTap(${K(p)},${o})">${av(p,24)}#${p.n}<small>${esc(p.name)}</small></button>`}).join('')}</div>`:''};
-    body=`<div class="card"><h2>Composition de départ</h2><p class="mut">Touche un joueur pour le passer de <b>présent</b> (violet) à <b>titulaire</b> (vert), 5 maximum par équipe.</p>${sec(0,S.m.team)}${sec(1,oN)}<div class="row"><button onclick="closeP()">Plus tard</button><button class="p" onclick="startOk()">Commencer</button></div></div>`;
+    const sec=(o,nm)=>{const rs=S.m.roster.filter(p=>!!p.o==!!o).sort((x,y)=>x.n-y.n);return rs.length?`<b>${esc(nm)}</b> <span class="mut">(${rs.filter(p=>S.stt[K(p)]==2).length}/5 titulaires${rs.filter(p=>S.stt[K(p)]===0).length?' · '+rs.filter(p=>S.stt[K(p)]===0).length+' absent'+(rs.filter(p=>S.stt[K(p)]===0).length>1?'s':''):''})</span><div class="row" style="margin:6px 0 14px">${rs.map(p=>{const v=S.stt[K(p)];return `<button class="pl ${v===0?'ab':v==2?'sw':'on'}" style="flex:0 0 auto" onclick="stTap(${K(p)},${o})">${av(p,24)}#${p.n}<small>${esc(dn(p))}</small></button>`}).join('')}</div>`:''};
+    body=`<div class="card"><h2>Composition de départ</h2><p class="mut">Touche un joueur pour changer son statut : <b>présent</b> (violet) → <b>titulaire</b> (vert, 5 maximum par équipe) → <b>absent</b> (gris, masqué dans les stats).</p>${sec(0,S.m.team)}${sec(1,oN)}<div class="row"><button onclick="closeP()">Plus tard</button><button class="p" onclick="startOk()">Commencer</button></div></div>`;
   }else if(S.tab=='rec'&&S.panel=='sub'){
     const sec=(o,nm)=>{
-      const on=o?oOn:hOn,bn=S.m.roster.filter(p=>!!p.o==!!o&&!on.includes(K(p))).map(K);
+      const on=o?oOn:hOn,bn=S.m.roster.filter(p=>!!p.o==!!o&&!on.includes(K(p))&&!p.abs).sort((x,y)=>x.n-y.n).map(K);
       const cn=on.length-S.so.filter(k=>on.includes(k)).length+S.si.filter(k=>bn.includes(k)).length;
-      const bt=(k,x,cl)=>`<button class="pl ${cl}" style="flex:0 0 auto" onclick="tg('${x}',${k})">${av(by[k],24)}#${by[k].n}<small>${esc(by[k].name)}</small></button>`;
+      const bt=(k,x,cl)=>`<button class="pl ${cl}" style="flex:0 0 auto" onclick="tg('${x}',${k})">${av(by[k],24)}#${by[k].n}<small>${esc(dn(by[k]))}</small></button>`;
       return{cn,h:`<b>${esc(nm)}</b> <span class="mut">(${cn}/5 après changement)</span>${on.length?`<div class="mut">Sortent</div><div class="row">${on.map(k=>bt(k,'so',S.so.includes(k)?'sw':'')).join('')}</div>`:''}<div class="mut">Entrent</div><div class="row">${bn.map(k=>bt(k,'si',S.si.includes(k)?'on':'')).join('')||'<span class="mut">Aucun remplaçant</span>'}</div>`};
     };
     const A=sec(0,S.m.team),D=sec(1,oN),ok=(S.so.length||S.si.length)&&A.cn<=5&&D.cn<=5;
@@ -644,7 +773,7 @@ function draw(){
   }else if(S.tab=='rec'&&S.panel=='hist'){
     if(S.edit){
       const e=S.ev.find(x=>x.id==S.edit);
-      const opts=(S.m.roster.some(p=>K(p)==e.player)?'':`<option value="${e.player}" selected>joueur retiré</option>`)+S.m.roster.map(p=>`<option value="${K(p)}" ${K(p)==e.player?'selected':''}>#${p.n} ${esc(p.name)} (${esc(p.o?oN:S.m.team)})</option>`).join('');
+      const opts=(S.m.roster.some(p=>K(p)==e.player)?'':`<option value="${e.player}" selected>joueur retiré</option>`)+S.m.roster.map(p=>`<option value="${K(p)}" ${K(p)==e.player?'selected':''}>#${p.n} ${esc(dn(p))} (${esc(p.o?oN:S.m.team)})</option>`).join('');
       const tps=Object.keys(TL).map(t=>`<option value="${t}" ${t==e.type?'selected':''}>${TL[t]}</option>`).join('');
       body=`<div class="card"><h2>Modifier l'évènement</h2><div class="mut">${PL(e.quarter)} · ${mmss(e.clock)}</div><label>Joueur<select id="ep">${opts}</select></label><label>Statistique<select id="et">${tps}</select></label><div class="row" style="margin-top:12px"><button onclick="S.edit=null;draw()">Retour</button><button style="color:var(--ko)" onclick="delEv()">Supprimer</button><button class="p" onclick="saveEdit()">Enregistrer</button></div></div>`;
     }else{
@@ -656,19 +785,20 @@ function draw(){
     const B=(t,l,c='')=>`<button class="st ${c}${S.ps==t?' pend':''}" onclick="tap('${t}')">${l}</button>`;
     const hint=S.ps?`👉 ${TL[S.ps]} : touche le joueur. `:(hOn.length<5||oOn.length<5?'Touche « Changement » pour placer les joueurs. ':'');
     body=`${S.m.closed?'<div class="card" style="text-align:center">🏁 Match terminé — saisie verrouillée (voir l\'onglet Stats pour le rouvrir)</div>':''}<div class="row nw" style="margin:8px 0">${per.join('')}</div>
-    <div class="tl"><span>${hint}<b>${esc(S.m.team)}</b> · ${hOn.length}/5</span>${fsq(tfl(0))}</div>
+    <div class="tl" style="justify-content:center;gap:8px;margin:2px 0 6px"><span>Flèche</span><button class="nf ${arrow()===0?'p':''}" style="padding:6px 10px" onclick="setArrow(0)">◀ ${esc(S.m.team.slice(0,12))}</button><button class="nf ${arrow()===1?'p':''}" style="padding:6px 10px" onclick="setArrow(1)">${esc(oN.slice(0,12))} ▶</button></div>
+    <div class="tl"><span>${hint}<b>${esc(S.m.team)}</b> · ${hOn.length}/5 ${bonus(0)}</span>${fsq(tfl(0))}</div>
     <div class="row">${hOn.map(k=>pb(k,'pCourt',S.sel==k?'on':'')).join('')}</div>
     <div class="g">${B('t3m','+3','m')+B('t2m','+2','m')+B('lfm','+LF','m')+B('t3x','<s>3</s>','x')+B('t2x','<s>2</s>','x')+B('lfx','<s>LF</s>','x')+B('ro','REB. OFF.','tall')}<button id="clk" class="ck ${S.run?'run':''}" onpointerdown="lpS()" onpointerup="lpE()" onpointerleave="lpE()" onpointercancel="lpE()" oncontextmenu="return false" onclick="clockClick()">${mmss(Math.ceil(S.rem))}</button>${B('rd','REB. DÉF.','tall')+B('ast','P. DÉC.')+B('blk','CTR')+B('stl','INT')+B('fr','F. PROV.')+B('pf','FAUTE','fo')+B('tov','BP')}</div>
-    <div class="tl"><span><b>${esc(oN)}</b> · ${oOn.length}/5</span>${fsq(tfl(1))}</div>
+    <div class="tl"><span><b>${esc(oN)}</b> · ${oOn.length}/5 ${bonus(1)}</span>${fsq(tfl(1))}</div>
     <div class="row">${oOn.map(k=>pb(k,'pCourt',S.sel==k?'on':'')).join('')}</div>
     <div class="row bb" style="margin-top:10px"><button class="p" onclick="S.panel='sub';S.so=[];S.si=[];draw()">🔄 Changement</button><button onclick="S.panel='hist';S.edit=null;draw()">📋 Historique</button><button onclick="undo()">↩ Annuler</button></div>`;
   }else if(S.tab=='box'){
     const tbl=(rs,nm)=>{const T=f=>rs.reduce((x,p)=>x+p[f],0);return `<div class="card" style="overflow-x:auto"><b>${esc(nm)}</b><table><tr><th>Joueur</th><th>TIM</th><th>PTS</th><th>REB</th><th>PD</th><th>INT</th><th>CT</th><th>BP</th><th>F</th><th>FP</th><th>2P</th><th>3P</th><th>LF</th><th>+/-</th><th>EVAL</th></tr>
-    ${rs.map(p=>`<tr><td>${ons.includes(p.k)?'● ':''}#${p.n} ${esc(p.name)}</td><td>${mmss(p.tim)}</td><td><b>${p.pts}</b></td><td>${p.reb}</td><td>${p.ast}</td><td>${p.stl}</td><td>${p.blk}</td><td>${p.tov}</td><td>${p.pf}</td><td>${p.fr}</td><td>${p.t2m}/${p.t2m+p.t2x}</td><td>${p.t3m}/${p.t3m+p.t3x}</td><td>${p.lfm}/${p.lfm+p.lfx}</td><td>${p.pm>0?'+':''}${p.pm}</td><td>${EV(p)}</td></tr>`).join('')}
+    ${rs.map(p=>`<tr><td>${ons.includes(p.k)?'● ':''}#${p.n} ${esc(dn(p))}</td><td>${mmss(p.tim)}</td><td><b>${p.pts}</b></td><td>${p.reb}</td><td>${p.ast}</td><td>${p.stl}</td><td>${p.blk}</td><td>${p.tov}</td><td>${p.pf}</td><td>${p.fr}</td><td>${p.t2m}/${p.t2m+p.t2x}</td><td>${p.t3m}/${p.t3m+p.t3x}</td><td>${p.lfm}/${p.lfm+p.lfx}</td><td>${p.pm>0?'+':''}${p.pm}</td><td>${EV(p)}</td></tr>`).join('')}
     <tr><td><b>Total</b></td><td></td><td><b>${T('pts')}</b></td><td>${T('reb')}</td><td>${T('ast')}</td><td>${T('stl')}</td><td>${T('blk')}</td><td>${T('tov')}</td><td>${T('pf')}</td><td>${T('fr')}</td><td>${T('t2m')}/${T('t2m')+T('t2x')}</td><td>${T('t3m')}/${T('t3m')+T('t3x')}</td><td>${T('lfm')}/${T('lfm')+T('lfx')}</td><td></td><td><b>${rs.reduce((x,p)=>x+EV(p),0)}</b></td></tr></table></div>`};
-    body=tbl(st.rows.filter(p=>!p.o),S.m.team)+tbl(st.rows.filter(p=>p.o),oN)+scoreCard()+lineCard(st)+shotCard(0)+shotCard(1)+`<button style="width:100%" onclick="S.ex=true;draw()">⬇ Exporter…</button>${S.obs||!canW()?'':`<button style="width:100%;margin-top:8px" onclick="${S.m.closed?'reopen()':'endMatch()'}">${S.m.closed?'🔓 Rouvrir le match':'🏁 Terminer le match'}</button>`}`;
+    body=tbl(st.rows.filter(p=>!p.o&&vis(p)),S.m.team)+tbl(st.rows.filter(p=>p.o&&vis(p)),oN)+scoreCard()+lineCard(st)+shotCard(0)+shotCard(1)+`<button style="width:100%" onclick="S.ex=true;draw()">⬇ Exporter…</button>${S.obs||!canW()?'':`<button style="width:100%;margin-top:8px" onclick="${S.m.closed?'reopen()':'endMatch()'}">${S.m.closed?'🔓 Rouvrir le match':'🏁 Terminer le match'}</button>`}`;
   }else{
-    const sec=(o,nm)=>`<div class="card"><div class="row"><b>${esc(nm)}</b><button class="nf good" onclick="saveTeam(${o})">💾 Enregistrer l'équipe</button></div><div class="row" style="margin:6px 0"><button onclick="pullTeam(${o})">🔄 Mettre à jour depuis l'équipe enregistrée</button></div><div class="row" style="margin:6px 0"><button onclick="tplXL()">⬇ Modèle Excel</button><button onclick="S.xo=${o};document.getElementById('xf').click()">📥 Importer Excel</button></div><div class="bubs">${S.m.roster.filter(p=>!!p.o==!!o).sort((a,b)=>a.n-b.n).map(p=>`<button class="bub" onclick="editP(${K(p)},${o})">${av(p)}<b>#${p.n}</b> ${esc(p.name)}<small>${esc(p.first||'')}${p.pos?' · '+p.pos:''}</small></button>`).join('')}<button class="bub add" onclick="editP(null,${o})">＋</button></div></div>`;
+    const sec=(o,nm)=>`<div class="card"><div class="row"><b>${esc(nm)}</b><button class="nf good" onclick="saveTeam(${o})">💾 Enregistrer l'équipe</button></div><div class="row" style="margin:6px 0"><button onclick="pullTeam(${o})">🔄 Mettre à jour depuis l'équipe enregistrée</button></div><div class="row" style="margin:6px 0"><button onclick="tplXL()">⬇ Modèle Excel</button><button onclick="S.xo=${o};document.getElementById('xf').click()">📥 Importer Excel</button></div><div class="bubs">${S.m.roster.filter(p=>!!p.o==!!o).sort((a,b)=>a.n-b.n).map(p=>`<button class="bub${p.abs?' ab':''}" onclick="editP(${K(p)},${o})">${av(p)}<b>#${p.n}</b> ${esc(p.name)}<small>${esc(p.first||'')}${p.pos?' · '+p.pos:''}${p.abs?' · absent':''}</small></button>`).join('')}<button class="bub add" onclick="editP(null,${o})">＋</button></div></div>`;
     body=(S.ev.length?'':'<button style="width:100%;margin-bottom:8px" onclick="initStart();S.tab=\'rec\';draw()">📋 Composition de départ</button>')+sec(0,S.m.team)+sec(1,oN)+'<input type="file" id="xf" accept=".xlsx,.xls,.csv" hidden onchange="impXL(this)">';
   }
   a.innerHTML=head+body+popH()+peH()+exH()+ckH()+dlgH();
