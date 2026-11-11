@@ -5,7 +5,9 @@
 <p>Saisissez les stats de vos matchs depuis votre téléphone, tablette ou PC, et laissez parents, joueurs et supporters les suivre en temps réel.</p>
 <p>Sans compte et sans installation.</p>
 <p align="center">
-  <a href="https://ludopoire.github.io/LaFeuille/"><b>Essayer LaFeuille</b></a>
+  <a href="https://ludopoire.github.io/LaFeuille/">
+    <img src="docs/img/readme_button.png" alt="Essayer LaFeuille" width="240">
+  </a>
 </p>
 
 
