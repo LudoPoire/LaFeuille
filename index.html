@@ -474,7 +474,7 @@ function pullTeam(o){
   });
   persist();draw();toast('🔄 '+n+' joueur(s) mis à jour depuis « '+nm+' »');
 }
-async function openAcc(){S.view='acc';S.users=null;S.err='';draw();await loadMem();accCall({action:'list'});}
+async function openAcc(){S.view='acc';S.users=null;S.err='';draw();await loadMem();loadReq();accCall({action:'list'});}
 async function loadMem(){const r=await sb.from('profile_groups').select('*');S.mem={};if(!r.error)(r.data||[]).forEach(x=>{(S.mem[x.user_id]=S.mem[x.user_id]||[]).push(x.group_id)});}
 async function accCall(b){
   const r=await sb.functions.invoke('admin-users',{body:b});let e=null;
@@ -681,6 +681,94 @@ function doExport(fmt){
 }
 /* affichage */
 let lastVk='';
+/* ===== Accueil sans connexion : démo + demande de compte ===== */
+const TOUR=[
+['🏀','Saisie en direct','Un tap sur la joueuse, un tap sur l’action : points, rebonds, passes, interceptions, balles perdues, fautes. Le score se met à jour tout seul, avec annulation en un tap.'],
+['📋','Effectif prêt en 1 minute','Importez votre effectif depuis un fichier Excel (modèle fourni), ou ajoutez les joueuses à la main. Elles sont triées par numéro, affichées en « initiale + nom », avec photo possible.'],
+['🟣','Présentes, titulaires, absentes','Avant le coup d’envoi, chaque joueuse est marquée présente, titulaire ou absente. Les absentes ne comptent pas dans le tableau de stats.'],
+['⏱️','Chrono et périodes','Chrono intégré avec réglage rapide, quart-temps et prolongations, fautes d’équipe en 5 petits carrés (le dernier rouge) et alerte à la 4e faute d’une joueuse.'],
+['🎯','Carte des tirs','Chaque tir peut être placé sur le terrain : réussis et ratés, par équipe et par joueuse.'],
+['📊','Stats et évaluation','Tableau complet par joueuse (points, rebonds, passes, interceptions, contres, balles perdues, fautes, pourcentages, +/-) avec l’évaluation EVAL, plus l’historique action par action.'],
+['👀','Suivi en direct, sans compte','Parents et supporters entrent le code du match (ou ouvrent le lien partagé) et suivent score, chrono, stats et historique en temps réel.'],
+['📺','Scoreboard plein écran','Un affichage géant du score pour la salle, avec logos et couleurs des équipes, fautes d’équipe et flèche de possession.'],
+['📈','Fiches joueuses et saisons','Moyennes et progression de chaque joueuse au fil des matchs et des saisons.'],
+['👥','Groupes et comptes','Un espace par catégorie (U11, U13, U15…). Chaque coach ne voit que ses groupes. Rôles : administrateur, statisticien, lecteur.'],
+['📶','Hors connexion et installable','Un match se saisit même sans réseau : tout se synchronise au retour de la connexion. L’appli s’installe sur l’écran d’accueil comme une vraie application.'],
+['⬇️','Export','Exportez le match (tableau, carte des tirs, courbes du score et de l’écart, score final) pour le club ou la presse.']
+];
+const ACT=[['t2m','+2','m'],['t3m','+3','m'],['lfm','+LF','m'],['t2x','2 raté','x'],['t3x','3 raté','x'],['lfx','LF raté','x'],['reb','Rebond',''],['ast','Passe déc.',''],['stl','Interception',''],['tov','Balle perdue','u'],['pf','Faute','fo']];
+let D=null,Rq=null;
+const dPts=p=>p.t2m*2+p.t3m*3+p.lfm,dEv=p=>dPts(p)+p.reb+p.ast+p.stl-p.t2x-p.t3x-p.lfx-p.tov;
+function demoGo(){const z=(n,name,first)=>({n,name,first,t2m:0,t2x:0,t3m:0,t3x:0,lfm:0,lfx:0,reb:0,ast:0,stl:0,tov:0,pf:0});D={tab:'tour',i:0,sel:null,opp:0,log:[],s:[z(4,'Martin','Jean'),z(7,'Dupont','Marie'),z(9,'Bernard','Léa'),z(11,'Leroy','Sofia'),z(14,'Moreau','Inès')]};S.view='demo';S.err='';draw();}
+function dAct(t){if(D.sel==null)return;D.s[D.sel][t]++;D.log.push({p:D.sel,t});draw();}
+function dUndo(){const l=D.log.pop();if(l)D.s[l.p][l.t]--;draw();}
+function demoH(){
+  const d=D,tot=d.s.reduce((a,p)=>a+dPts(p),0),pf=d.s.reduce((a,p)=>a+p.pf,0),nm=p=>dn(p);
+  const tabs=`<div class="tabs row nw"><button class="${d.tab=='tour'?'on':''}" onclick="D.tab='tour';draw()">📖 Visite guidée</button><button class="${d.tab=='play'?'on':''}" onclick="D.tab='play';draw()">🎮 Essayer</button></div>`;
+  let b='';
+  if(d.tab=='tour'){const s=TOUR[d.i],last=d.i==TOUR.length-1;b=`<div class="card" style="text-align:center"><div style="font-size:48px">${s[0]}</div><h2>${s[1]}</h2><p>${s[2]}</p><div class="mut">${d.i+1} / ${TOUR.length}</div><div class="row nw" style="margin-top:8px"><button class="nf" ${d.i?'':'disabled'} onclick="D.i--;draw()">←</button><button class="p" onclick="${last?"D.tab='play';draw()":'D.i++;draw()'}">${last?'🎮 Essayer maintenant':'Suivant →'}</button></div></div>`;}
+  else{
+    b=`<p class="mut" style="text-align:center">🎮 Mode démo : rien n’est enregistré.</p>
+    <div class="card"><div class="row nw" style="align-items:center"><div class="sc">Mon équipe<br>${tot}</div><div class="sc">Adversaire<br>${d.opp}</div></div>
+    <div class="row nw" style="margin-top:6px"><span class="mut nf">Fautes ${fsq(Math.min(5,pf))}</span>${[1,2,3].map(n=>`<button onclick="D.opp+=${n};draw()">Adv. +${n}</button>`).join('')}</div></div>
+    <div class="row nw">${d.s.map((p,i)=>`<button class="pl ${d.sel==i?'on':''}" onclick="D.sel=${i};draw()">${p.n}<small>${esc(nm(p))}</small></button>`).join('')}</div>
+    <p class="mut" style="margin:6px 0">${d.sel==null?'👆 Touche d’abord une joueuse, puis une action.':'Action pour #'+d.s[d.sel].n+' '+esc(nm(d.s[d.sel]))}</p>
+    <div class="g">${ACT.map(a=>`<button class="${a[2]}" ${d.sel==null?'disabled':''} onclick="dAct('${a[0]}')">${a[1]}</button>`).join('')}<button class="u" ${d.log.length?'':'disabled'} onclick="dUndo()">↩ Annuler</button></div>
+    <div class="card" style="overflow:auto"><table><tr><th>Joueuse</th><th>PTS</th><th>REB</th><th>PD</th><th>INT</th><th>BP</th><th>F</th><th>EVAL</th></tr>${d.s.map(p=>`<tr><td>#${p.n} ${esc(nm(p))}</td><td>${dPts(p)}</td><td>${p.reb}</td><td>${p.ast}</td><td>${p.stl}</td><td>${p.tov}</td><td>${p.pf}</td><td><b>${dEv(p)}</b></td></tr>`).join('')}</table></div>
+    <div class="card"><b>Historique</b>${d.log.length?d.log.slice(-6).reverse().map(l=>`<div class="mut">#${d.s[l.p].n} ${esc(nm(d.s[l.p]))} — ${ACT.find(a=>a[0]==l.t)[1]}</div>`).join(''):'<div class="mut">Aucune action pour l’instant.</div>'}</div>`;
+  }
+  return `<div class="row nw"><button class="nf" onclick="S.view='login';draw()">←</button><h1>Tester LaFeuille</h1></div>${tabs}${b}<div class="card" style="text-align:center"><b>Envie de l’utiliser pour votre club ?</b><button class="p" style="width:100%;margin-top:8px" onclick="reqGo()">📝 Demander mon compte</button></div>`;
+}
+const POSL=['PG','SG','SF','PF','C'];
+function plParse(t){return String(t||'').split('\n').map(l=>l.trim().split(/[;\t,]+|\s+/).filter(Boolean)).map(w=>{const n=parseInt(w[0]);if(isNaN(n)||!w[1])return null;const la=(w[w.length-1]||'').toUpperCase(),pos=w.length>2&&POSL.includes(la)?la:'',mid=w.slice(1,pos?w.length-1:w.length);return{n,name:mid[0],first:mid.slice(1).join(' '),pos};}).filter(Boolean);}
+const rqG=()=>({name:'',season:'',team:'',pl:''});
+function reqGo(){Rq=Rq||{name:'',email:'',msg:'',hp:'',g:[rqG()]};S.view='req';S.err='';draw();}
+function reqRead(){if(!$('rn'))return;const q=s=>[...document.querySelectorAll(s)].map(x=>x.value);Rq.name=$('rn').value;Rq.email=$('re').value;Rq.msg=$('rm').value;Rq.hp=$('rh').value;const n=q('.rgn'),s=q('.rgs'),t=q('.rgt'),p=q('.rgp');Rq.g=n.map((x,i)=>({name:x,season:s[i],team:t[i],pl:p[i]}));}
+function reqAdd(){reqRead();Rq.g.push(rqG());draw();}
+function reqDel(i){reqRead();Rq.g.splice(i,1);draw();}
+function reqH(){const R=Rq;return `<div class="row nw"><button class="nf" onclick="reqRead();S.view='login';draw()">←</button><h1>Demander un compte</h1></div>
+  <p class="mut">Votre compte « Statisticien » sera créé après validation, avec vos catégories et vos joueurs déjà prêts.</p>
+  <div class="card"><label>Votre nom<input id="rn" value="${esc(R.name)}"></label><label>E-mail (ce sera votre identifiant)<input id="re" type="email" value="${esc(R.email)}"></label><input id="rh" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px" value=""></div>
+  ${R.g.map((g,i)=>`<div class="card"><div class="row nw" style="align-items:center"><b>Catégorie ${i+1}</b>${R.g.length>1?`<button class="nf" onclick="reqDel(${i})">🗑</button>`:''}</div><input class="rgn" placeholder="Nom du groupe (ex. U15 filles)" value="${esc(g.name)}"><input class="rgs" placeholder="Saison (facultatif, ex. 2026-2027)" value="${esc(g.season)}"><input class="rgt" placeholder="Nom de l’équipe (facultatif)" value="${esc(g.team)}"><label>Joueurs <span class="mut">(un par ligne : numéro nom prénom poste)</span><textarea class="rgp" rows="5" placeholder="4 Martin Jean PG&#10;7 Dupont Marie SG">${esc(g.pl)}</textarea></label></div>`).join('')}
+  <button style="width:100%" onclick="reqAdd()">＋ Ajouter une catégorie</button>
+  <div class="card"><label>Message (facultatif)<textarea id="rm" rows="2">${esc(R.msg)}</textarea></label></div>
+  <p class="err">${esc(S.err)}</p><button class="p" style="width:100%" onclick="reqSend()">📨 Envoyer ma demande</button>`;}
+async function reqSend(){
+  reqRead();const R=Rq,gs=R.g.filter(g=>g.name.trim());
+  if(!R.name.trim()||!/^\S+@\S+\.\S+$/.test(R.email.trim())){S.err='Nom et e-mail valides requis';return draw();}
+  if(!gs.length){S.err='Indiquez au moins un nom de groupe';return draw();}
+  if(R.hp){S.view='reqok';return draw();}
+  const groups=gs.map(g=>({name:g.name.trim(),season:g.season.trim(),team:g.team.trim(),players:plParse(g.pl)}));
+  const r=await sb.from('account_requests').insert({name:R.name.trim(),email:R.email.trim(),message:R.msg.trim(),groups});
+  if(r.error){S.err='Envoi impossible : '+r.error.message;return draw();}
+  Rq=null;S.err='';S.view='reqok';draw();
+}
+const reqokH=()=>`<h1>✅ Demande envoyée</h1><div class="card"><p>Merci ! Votre demande a bien été transmise. Vous recevrez vos accès par e-mail après validation.</p></div><button style="width:100%" onclick="S.view='login';draw()">← Retour à l’accueil</button>`;
+/* admin : demandes en attente */
+async function loadReq(){const r=await sb.from('account_requests').select('*').eq('status','pending').order('created_at');S.reqs=r.error?[]:(r.data||[]);if(S.view=='acc')draw();}
+function reqCardH(){const R=S.reqs||[];if(!R.length)return '';return `<div class="card"><b>📨 Demandes de compte (${R.length})</b>${R.map((q,i)=>`<div class="card"><b>${esc(q.name)}</b> <span class="mut">${esc(q.email)}</span>${q.message?`<div class="mut">${esc(q.message)}</div>`:''}${(q.groups||[]).map(g=>`<div class="mut">• ${esc(g.name)}${g.season?' · '+esc(g.season):''} — ${(g.players||[]).length} joueur(s)</div>`).join('')}<div class="row nw" style="margin-top:6px"><button class="p" onclick="reqOk(${i})">✅ Valider (Statisticien)</button><button class="nf" onclick="reqNo(${i})">🗑</button></div></div>`).join('')}</div>`;}
+function reqNo(i){const q=S.reqs[i];ask(`Refuser la demande de <b>${esc(q.name)}</b> ?`,async()=>{await sb.from('account_requests').update({status:'refused'}).eq('id',q.id);loadReq();});}
+function reqOk(i){
+  const q=S.reqs[i],pw=Math.random().toString(36).slice(2,10);
+  ask(`Créer le compte <b>${esc(q.email)}</b> (Statisticien) avec ${(q.groups||[]).length} groupe(s) et leurs joueurs ?<br><span class="mut">Mot de passe provisoire : <b>${pw}</b></span>`,async()=>{
+    if(!await accCall({action:'create',email:q.email,password:pw,role:'stat'}))return;
+    const u=(S.users||[]).find(x=>x.email==q.email);if(!u){toast('Compte créé mais introuvable : attribue les groupes à la main');return}
+    for(const g of q.groups||[]){
+      let gr=S.groups.find(x=>x.name.toLowerCase()==g.name.toLowerCase());
+      if(!gr){const r=await sb.from('groups').insert({name:g.name}).select().single();if(r.error){toast('Erreur groupe : '+r.error.message);continue}gr=r.data;S.groups.push(gr);}
+      await sb.from('profile_groups').insert({user_id:u.id,group_id:gr.id});
+      let tn=g.team||g.name;if(S.teams.some(t=>t.name.toLowerCase()==tn.toLowerCase()))tn=tn+' ('+g.name+')';
+      const pls=(g.players||[]).map(p=>({...p,first:p.first||'',pos:p.pos||'',pid:crypto.randomUUID(),photo:''}));
+      const r2=await sb.from('teams').insert({name:tn,players:pls,group_id:gr.id,updated_at:new Date().toISOString()});
+      if(r2.error)toast('Équipe non créée : '+r2.error.message);else S.teams.push({name:tn,players:pls,group_id:gr.id});
+    }
+    S.groups.sort((x,y)=>x.name.localeCompare(y.name));cacheSet('groups',S.groups);
+    await sb.from('account_requests').update({status:'validated'}).eq('id',q.id);
+    await loadMem();await loadReq();
+    const body=encodeURIComponent('Bonjour '+q.name+',\n\nVotre compte LaFeuille est prêt : https://ludopoire.github.io/LaFeuille/\nIdentifiant : '+q.email+'\nMot de passe provisoire : '+pw+'\n\nÀ bientôt !');
+    ask(`✅ Compte créé.<br>Identifiant : <b>${esc(q.email)}</b><br>Mot de passe : <b>${pw}</b><br><a href="mailto:${esc(q.email)}?subject=${encodeURIComponent('Votre compte LaFeuille')}&body=${body}">✉️ Envoyer ces accès par e-mail</a>`,()=>{});
+  });
+}
 function draw(){
   const a=$('app');document.body.classList.toggle('bdv',S.view=='board');
   const vk=S.view+S.tab+S.panel+S.edit+(S.pop?1:0)+(S.dlg?1:0)+(S.pe?1:0)+(S.ex?1:0)+(S.ck?1:0);a.className=vk!=lastVk?'fx':'';lastVk=vk;
@@ -722,7 +810,10 @@ function draw(){
     else b=`<div class="card"><b>${esc(q.team)}</b> · ${q.rec.n} match${q.rec.n>1?'s':''} · ${q.rec.W} V – ${q.rec.L} D · ${(q.rec.pf/q.rec.n).toFixed(1)} pts marqués / ${(q.rec.pa/q.rec.n).toFixed(1)} encaissés</div><div class="card" style="overflow-x:auto"><table><tr><th>Joueur</th><th>MJ</th><th>MIN</th><th>PTS</th><th>REB</th><th>PD</th><th>INT</th><th>CT</th><th>BP</th><th>2P</th><th>3P</th><th>LF</th><th>EVAL</th></tr>${A.map((p,i)=>`<tr onclick="S.ss.pl=${i};draw()" style="cursor:pointer"><td>#${p.n} ${esc(dn(p))}</td><td>${p.gp}</td><td>${mmss(p.tim/p.gp)}</td><td><b>${avg(p,'pts')}</b></td><td>${avg(p,'reb')}</td><td>${avg(p,'ast')}</td><td>${(p.stl/p.gp).toFixed(1)}</td><td>${(p.blk/p.gp).toFixed(1)}</td><td>${(p.tov/p.gp).toFixed(1)}</td><td>${pcn(p.t2m,p.t2m+p.t2x)}</td><td>${pcn(p.t3m,p.t3m+p.t3x)}</td><td>${pcn(p.lfm,p.lfm+p.lfx)}</td><td>${avg(p,'eval')}</td></tr>`).join('')}</table><p class="mut">Moyennes par match. Touche un joueur pour sa fiche.</p></div>`;
     a.innerHTML=hd+(q.pl!=null?'':flt)+b;return;
   }
-  if(S.view=='login'){a.innerHTML=`<h1>🏀 LaFeuille</h1><div class="card"><input id="em" type="email" placeholder="Identifiant (e-mail)"><input id="pw" type="password" placeholder="Mot de passe"><button class="p" style="width:100%;margin-top:6px" onclick="login()">Connexion</button><p class="err">${S.err}</p></div><button style="width:100%" onclick="S.omode='follow';S.view='obsin';S.err='';draw()">👀 Suivre un match en direct (sans compte)</button><button style="width:100%;margin-top:8px" onclick="S.omode='board';S.view='obsin';S.err='';draw()">📺 Scoreboard (sans compte)</button>`+FT;return;}
+  if(S.view=='demo'){a.innerHTML=demoH()+FT;return;}
+  if(S.view=='req'){a.innerHTML=reqH()+FT;return;}
+  if(S.view=='reqok'){a.innerHTML=reqokH()+FT;return;}
+  if(S.view=='login'){a.innerHTML=`<h1>🏀 LaFeuille</h1><div class="card"><input id="em" type="email" placeholder="Identifiant (e-mail)"><input id="pw" type="password" placeholder="Mot de passe"><button class="p" style="width:100%;margin-top:6px" onclick="login()">Connexion</button><p class="err">${S.err}</p></div><button style="width:100%" onclick="S.omode='follow';S.view='obsin';S.err='';draw()">👀 Suivre un match en direct (sans compte)</button><button class="p" style="width:100%;margin-top:8px" onclick="demoGo()">🎮 Tester par vous-même !</button><button style="width:100%;margin-top:8px" onclick="reqGo()">📝 Demander mon compte et mes catégories</button>`+FT;return;}
   if(S.view=='te'){
     const t=tp();
     a.innerHTML=`<div class="row nw"><button class="nf" onclick="S.view='teams';draw()">←</button><h1>${esc(t.name)}</h1></div>
@@ -731,7 +822,7 @@ function draw(){
   }
   if(S.view=='acc'){
     const U=S.users,RL={admin:'Administrateur',stat:'Statisticien',lecteur:'Lecteur'},G=S.groups||[],M=S.mem||{};
-    a.innerHTML=`<div class="row nw"><button class="nf" onclick="home()">←</button><h1>Comptes</h1></div><p class="err">${esc(S.err)}</p>
+    a.innerHTML=`<div class="row nw"><button class="nf" onclick="home()">←</button><h1>Comptes</h1></div><p class="err">${esc(S.err)}</p>${reqCardH()}
     <div class="card"><b>Créer un compte</b><input id="ae" type="email" placeholder="E-mail (identifiant)"><input id="ap" type="text" placeholder="Mot de passe (6 caractères min.)"><select id="ar"><option value="stat">Statisticien (saisie)</option><option value="lecteur">Lecteur (consultation)</option><option value="admin">Administrateur</option></select><div class="mut" style="margin-top:6px">Groupes accessibles (inutile pour un administrateur)</div>${G.map(g=>`<label style="display:flex;gap:6px;align-items:center;margin:4px 0"><input type="checkbox" class="ang" value="${g.id}" ${g.id==S.gid?'checked':''}>${esc(g.name)}</label>`).join('')}<button class="p" style="width:100%;margin-top:6px" onclick="accNew()">Créer le compte</button></div>
     <div class="card"><b>Groupes</b>${G.map((g,i)=>`<div class="row nw" style="align-items:center;margin-top:6px"><span style="flex:3">${esc(g.name)}</span><button class="nf" onclick="grpRen(${i})">✏️</button><button class="nf" onclick="grpDel(${i})">🗑</button></div>`).join('')}<div class="row nw" style="margin-top:8px"><input id="gn" placeholder="Nouveau groupe (ex. U15)"><button class="nf p" onclick="grpNew()">＋ Créer</button></div></div>
     ${U?U.map((u,i)=>`<div class="card"><b>${esc(u.email||'')}</b><div class="row nw" style="margin-top:6px"><select onchange="accCall({action:'role',id:S.users[${i}].id,role:this.value})">${Object.keys(RL).map(r=>`<option value="${r}" ${u.role==r?'selected':''}>${RL[r]}</option>`).join('')}</select><button class="nf" onclick="accDel(${i})">🗑</button></div>${u.role=='admin'?'<div class="mut" style="margin-top:6px">Administrateur : accès à tous les groupes</div>':`<div class="mut" style="margin-top:6px">Groupes accessibles</div>${G.map(g=>`<label style="display:flex;gap:6px;align-items:center;margin:4px 0"><input type="checkbox" ${(M[u.id]||[]).includes(g.id)?'checked':''} onchange="memTog(${i},'${g.id}',this.checked)">${esc(g.name)}</label>`).join('')}`}<div class="row nw" style="margin-top:6px"><input id="pw${i}" type="text" placeholder="Nouveau mot de passe"><button class="nf" onclick="accPw(${i})">🔑</button></div></div>`).join(''):'<p class="mut">Chargement…</p>'}`+dlgH();return;
