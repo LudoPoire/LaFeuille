@@ -75,7 +75,7 @@ const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 let S={user:null,view:'login',matches:[],m:null,ev:[],sel:null,ps:null,edit:null,dlg:null,pop:null,pe:null,ex:false,teams:[],evc:{},obs:false,ss:null,clk:null,role:null,users:null,te:null,xo:0,mf:'',groups:[],gid:null,gp:false,off:false,mem:{},omode:'follow',stt:null,panel:null,so:[],si:[],qt:1,rem:600,run:false,last:0,tab:'rec',err:''};
 let Q=JSON.parse(localStorage.q||'{"i":[],"d":[]}'),tk=null;
 Q.m=Q.m||[];
-const saveQ=()=>{localStorage.q=JSON.stringify(Q);cacheEv();};
+const saveQ=()=>{if(S.demo)return;localStorage.q=JSON.stringify(Q);cacheEv();};
 const cacheSet=(k,v)=>{try{localStorage['lf_'+k]=JSON.stringify(v)}catch(e){}};
 const cacheGet=k=>{try{return JSON.parse(localStorage['lf_'+k]||'null')}catch(e){return null}};
 function cacheEv(){if(S&&S.view=='live'&&!S.obs&&S.m)cacheSet('ev'+S.m.id,S.ev);}
@@ -96,7 +96,7 @@ const plen=p=>p<=S.m.np?S.m.dur:300;
 const start=p=>{let s=0;for(let i=1;i<p;i++)s+=plen(i);return s};
 const tt=(q,c)=>start(q)+plen(q)-c;
 const mmss=s=>{s=Math.max(0,Math.round(s));return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')};
-const pending=()=>{const n=Q.i.length+Q.d.length+Q.m.length;return !navigator.onLine?'🔴 hors connexion'+(n?` · ${n} en attente`:''):n?`🟠 ${n} en attente`:'🟢 synchronisé'};
+const pending=()=>{if(S.demo)return '🎮 démo';const n=Q.i.length+Q.d.length+Q.m.length;return !navigator.onLine?'🔴 hors connexion'+(n?` · ${n} en attente`:''):n?`🟠 ${n} en attente`:'🟢 synchronisé'};
 
 async function sync(){
   if(!S.user)return;
@@ -120,7 +120,7 @@ async function login(){
   S.user=r.data.user;S.err='';await loadRole();home();
 }
 async function logout(){await sb.auth.signOut();S.user=null;S.view='login';draw();}
-async function home(){
+async function home(){if(S.demo){demoExit();return}
   stopClock();if(wl){wl.release();wl=null;}S.view='home';draw();
   let ok=true;
   try{
@@ -309,7 +309,7 @@ async function fetchAll(ids){let all=[],i=0;for(;;){const r=await sb.from('event
 let ckT=null,ot=null,ocode='';
 function pushClk(){if(!S.m||S.duo=='follow'||(!S.m.code&&S.duo!='main'))return;clearTimeout(ckT);ckT=setTimeout(()=>{sb.from('matches').update({clk:clkObj()}).eq('id',S.m.id).then(()=>{});},300);}
 const loadQR=()=>window.qrcode?Promise.resolve():new Promise((ok,ko)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js';s.onload=ok;s.onerror=ko;document.head.appendChild(s);});
-async function share(){
+async function share(){if(S.demo){toast('📡 Partage en direct : disponible avec un compte');return}
   if(!S.m.code){const A='ABCDEFGHJKLMNPQRSTUVWXYZ23456789',code=Array.from(crypto.getRandomValues(new Uint8Array(6)),x=>A[x%A.length]).join('');
     const r=await sb.from('matches').update({code,clk:clkObj()}).eq('id',S.m.id);
     if(r.error){toast('Erreur : '+r.error.message);return;}S.m.code=code;}
@@ -353,7 +353,7 @@ async function duoTick(){
   duoBusy=false;
 }
 setInterval(duoTick,3000);
-function duoMenu(){
+function duoMenu(){if(S.demo){toast('👥 Saisie à deux : disponible avec un compte');return}
   pop({t:'👥 Saisie à deux',html:`<p class="mut" style="text-align:left">Deux personnes saisissent le <b>même match</b> en même temps (par exemple une par équipe) : chacune ouvre ce match avec son compte. Le <b>principal</b> tient le chrono ; le <b>second</b> le suit automatiquement et ne peut pas le modifier. Chacun ne peut annuler que ses propres saisies. Les saisies de l'autre arrivent en 3 secondes environ.</p>${S.duo?'<p>Mode actuel : <b>'+(S.duo=='main'?'principal (chrono)':'second (suit le chrono)')+'</b></p>':''}`,sk:'Fermer',opts:[['⏱ Je suis le principal',()=>setDuo('main')],['👀 Je suis le second',()=>setDuo('follow')],['❌ Désactiver',()=>setDuo(null)]]});
 }
 function setDuo(m){
@@ -458,7 +458,7 @@ function cropImg(file,png){return new Promise(async res=>{
   bn.onclick=()=>{ov.remove();res(null)};
   bo.onclick=()=>{const o=document.createElement('canvas');o.width=o.height=256;const g=o.getContext('2d');if(!png){g.fillStyle='#fff';g.fillRect(0,0,256,256)}g.drawImage(cv,0,0,256,256);ov.remove();o.toBlob(b=>res(b),png?'image/png':'image/jpeg',.88)};
 });}
-async function upImg(file,path){
+async function upImg(file,path){if(S.demo){toast('📷 Photos : disponibles avec un compte');return null}
   const png=path.endsWith('.png'),b=await cropImg(file,png);if(!b)return null;
   const r=await sb.storage.from('photos').upload(path,b,{upsert:true,contentType:png?'image/png':'image/jpeg'});
   if(r.error){toast('Erreur photo : '+r.error.message);return null}
@@ -615,7 +615,7 @@ async function saveP(){
 function delP(){const E=S.pe;if(E.t){tp().players.splice(E.i,1);tSave();}else{S.m.roster=S.m.roster.filter(p=>K(p)!=E.k);persist();}S.pe=null;draw();}
 function peH(){if(!S.pe)return '';const E=S.pe,p=(E.t?(E.i==null?null:tp().players[E.i]):(E.k==null?null:S.m.roster.find(p=>K(p)==E.k)))||{},isNew=E.t?E.i==null:E.k==null;
   return `<div class="ov"><div class="card"><b>${isNew?'Nouveau joueur':'Modifier le joueur'}</b><div style="text-align:center;margin:6px 0">${av2(p.photo,p.name,56)}</div><label>Photo<input id="pph" type="file" accept="image/*"></label><label>Numéro<input id="pn" type="number" inputmode="numeric" value="${p.n??''}"></label><label>Nom<input id="pnm" value="${esc(p.name||'')}"></label><label>Prénom<input id="pfn" value="${esc(p.first||'')}"></label><label>Poste<select id="pps">${['','PG','SG','SF','PF','C'].map(x=>`<option ${x==p.pos?'selected':''}>${x}</option>`).join('')}</select></label>${E.t?'':`<label style="display:flex;align-items:center"><input type="checkbox" id="pab" ${p.abs?'checked':''}>Absent à ce match</label>`}<div class="row" style="margin-top:12px">${isNew?'':'<button style="color:var(--ko)" onclick="delP()">Supprimer</button>'}<button onclick="S.pe=null;draw()">Annuler</button><button class="p" onclick="saveP()">OK</button></div></div></div>`;}
-async function saveTeam(o){
+async function saveTeam(o){if(S.demo){toast('💾 Équipes enregistrées : disponible avec un compte');return}
   const nm=o?S.m.opp:S.m.team;if(!nm){toast("Nom d'équipe manquant");return;}
   let nw=0;S.m.roster.forEach(p=>{if(!p.pid){p.pid=crypto.randomUUID();nw=1}});if(nw)persist();const players=S.m.roster.filter(p=>!!p.o==!!o).map(p=>({n:p.n,name:p.name,first:p.first||'',pos:p.pos||'',pid:p.pid,photo:p.photo||''}));
   const r=await sb.from('teams').upsert({name:nm,players,updated_at:new Date().toISOString(),...(S.gid?{group_id:S.gid}:{})},{onConflict:'name'});
@@ -681,44 +681,54 @@ function doExport(fmt){
 }
 /* affichage */
 let lastVk='';
-/* ===== Accueil sans connexion : démo + demande de compte ===== */
+/* ===== Accueil sans connexion : guide + match de démo + demande de compte ===== */
+/* ===== TEXTES DU GUIDE : modifiez ici, uniquement le texte entre les apostrophes =====
+   (n’utilisez pas l’apostrophe droite ' dans un texte : tapez ’ à la place) */
+const RAISONS_TITRE='12 raisons de passer à LaFeuille';
+const RAISONS_INTRO='Découvrez en 12 étapes tout ce que LaFeuille apporte à votre club, à vos coachs et à vos supporters.';
 const TOUR=[
-['🏀','Saisie en direct','Un tap sur la joueuse, un tap sur l’action : points, rebonds, passes, interceptions, balles perdues, fautes. Le score se met à jour tout seul, avec annulation en un tap.'],
-['📋','Effectif prêt en 1 minute','Importez votre effectif depuis un fichier Excel (modèle fourni), ou ajoutez les joueuses à la main. Elles sont triées par numéro, affichées en « initiale + nom », avec photo possible.'],
-['🟣','Présentes, titulaires, absentes','Avant le coup d’envoi, chaque joueuse est marquée présente, titulaire ou absente. Les absentes ne comptent pas dans le tableau de stats.'],
-['⏱️','Chrono et périodes','Chrono intégré avec réglage rapide, quart-temps et prolongations, fautes d’équipe en 5 petits carrés (le dernier rouge) et alerte à la 4e faute d’une joueuse.'],
-['🎯','Carte des tirs','Chaque tir peut être placé sur le terrain : réussis et ratés, par équipe et par joueuse.'],
-['📊','Stats et évaluation','Tableau complet par joueuse (points, rebonds, passes, interceptions, contres, balles perdues, fautes, pourcentages, +/-) avec l’évaluation EVAL, plus l’historique action par action.'],
-['👀','Suivi en direct, sans compte','Parents et supporters entrent le code du match (ou ouvrent le lien partagé) et suivent score, chrono, stats et historique en temps réel.'],
-['📺','Scoreboard plein écran','Un affichage géant du score pour la salle, avec logos et couleurs des équipes, fautes d’équipe et flèche de possession.'],
-['📈','Fiches joueuses et saisons','Moyennes et progression de chaque joueuse au fil des matchs et des saisons.'],
-['👥','Groupes et comptes','Un espace par catégorie (U11, U13, U15…). Chaque coach ne voit que ses groupes. Rôles : administrateur, statisticien, lecteur.'],
-['📶','Hors connexion et installable','Un match se saisit même sans réseau : tout se synchronise au retour de la connexion. L’appli s’installe sur l’écran d’accueil comme une vraie application.'],
-['⬇️','Export','Exportez le match (tableau, carte des tirs, courbes du score et de l’écart, score final) pour le club ou la presse.']
+['🏀','Saisie en direct','Une action, un joueur associé : points, rebonds, passes, interceptions, contres, balles perdues, fautes. Le score se met à jour tout seul, avec annulation en un clic.'],
+['📋','Effectif prêt en 1 minute','Importez votre effectif depuis un fichier Excel (modèle fourni) ou ajoutez les joueurs à la main. Vous pouvez même ajouter leur photo !'],
+['🟣','Présents, titulaires, absents','Avant le coup d’envoi, chaque joueur est marqué présent, titulaire ou absent. Les absents ne comptent pas dans le tableau de stats. Les changements se font en deux clics.'],
+['⏱️','Chrono et périodes','Chrono intégré avec réglage rapide, quart-temps et prolongations, fautes d’équipe avec bonus. La 4e faute d’un joueur est signalée en orange, la 5e en rouge : c’est l’heure du changement !'],
+['🎯','Carte des tirs','Chaque tir peut être placé sur le terrain : réussis et ratés, par équipe et par joueur. Mettez en lumière les hot spots !'],
+['📊','Stats et évaluation','Tableau complet par joueur (points, rebonds, passes, interceptions, contres, balles perdues, fautes, tirs, +/-) avec l’évaluation, et l’historique action par action.'],
+['👀','Parents ou supporters','Ils entrent le code du match (ou ouvrent le lien partagé) et suivent score, chrono, stats et historique en temps réel, sans compte et sans rien installer.'],
+['📺','Scoreboard plein écran','Un affichage géant du score en cas de panne dans la salle, avec logos et couleurs des équipes, fautes d’équipe et flèche de possession.'],
+['📈','Fiches joueurs et saisons','Moyennes et progression de chaque joueur au fil des matchs et des saisons. Plus qu’un suivi à l’échelle d’un match, suivez l’évolution !'],
+['👥','Groupes et comptes','Un espace par catégorie (U11, U13, U15…). Chaque statisticien ne voit que ses groupes.'],
+['📶','Hors connexion et installable','Un match se saisit même sans réseau : tout se synchronise au retour de la connexion. L’appli s’installe aussi sur l’écran d’accueil comme une vraie application.'],
+['⬇️','Export','Exportez le match (tableau, carte des tirs, courbes du score et de l’écart, score final) pour un partage facile !']
 ];
-const ACT=[['t2m','+2','m'],['t3m','+3','m'],['lfm','+LF','m'],['t2x','2 raté','x'],['t3x','3 raté','x'],['lfx','LF raté','x'],['reb','Rebond',''],['ast','Passe déc.',''],['stl','Interception',''],['tov','Balle perdue','u'],['pf','Faute','fo']];
-let D=null,Rq=null;
-const dPts=p=>p.t2m*2+p.t3m*3+p.lfm,dEv=p=>dPts(p)+p.reb+p.ast+p.stl-p.t2x-p.t3x-p.lfx-p.tov;
-function demoGo(){const z=(n,name,first)=>({n,name,first,t2m:0,t2x:0,t3m:0,t3x:0,lfm:0,lfx:0,reb:0,ast:0,stl:0,tov:0,pf:0});D={tab:'tour',i:0,sel:null,opp:0,log:[],s:[z(4,'Martin','Jean'),z(7,'Dupont','Marie'),z(9,'Bernard','Léa'),z(11,'Leroy','Sofia'),z(14,'Moreau','Inès')]};S.view='demo';S.err='';draw();}
-function dAct(t){if(D.sel==null)return;D.s[D.sel][t]++;D.log.push({p:D.sel,t});draw();}
-function dUndo(){const l=D.log.pop();if(l)D.s[l.p][l.t]--;draw();}
+/* ===== fin des textes du guide ===== */
+let D=null,Rq=null,QR=null,RR=null;
+function demoGo(){D={i:-1};S.view='demo';S.err='';draw();}
 function demoH(){
-  const d=D,tot=d.s.reduce((a,p)=>a+dPts(p),0),pf=d.s.reduce((a,p)=>a+p.pf,0),nm=p=>dn(p);
-  const tabs=`<div class="tabs row nw"><button class="${d.tab=='tour'?'on':''}" onclick="D.tab='tour';draw()">📖 Visite guidée</button><button class="${d.tab=='play'?'on':''}" onclick="D.tab='play';draw()">🎮 Essayer</button></div>`;
-  let b='';
-  if(d.tab=='tour'){const s=TOUR[d.i],last=d.i==TOUR.length-1;b=`<div class="card" style="text-align:center"><div style="font-size:48px">${s[0]}</div><h2>${s[1]}</h2><p>${s[2]}</p><div class="mut">${d.i+1} / ${TOUR.length}</div><div class="row nw" style="margin-top:8px"><button class="nf" ${d.i?'':'disabled'} onclick="D.i--;draw()">←</button><button class="p" onclick="${last?"D.tab='play';draw()":'D.i++;draw()'}">${last?'🎮 Essayer maintenant':'Suivant →'}</button></div></div>`;}
-  else{
-    b=`<p class="mut" style="text-align:center">🎮 Mode démo : rien n’est enregistré.</p>
-    <div class="card"><div class="row nw" style="align-items:center"><div class="sc">Mon équipe<br>${tot}</div><div class="sc">Adversaire<br>${d.opp}</div></div>
-    <div class="row nw" style="margin-top:6px"><span class="mut nf">Fautes ${fsq(Math.min(5,pf))}</span>${[1,2,3].map(n=>`<button onclick="D.opp+=${n};draw()">Adv. +${n}</button>`).join('')}</div></div>
-    <div class="row nw">${d.s.map((p,i)=>`<button class="pl ${d.sel==i?'on':''}" onclick="D.sel=${i};draw()">${p.n}<small>${esc(nm(p))}</small></button>`).join('')}</div>
-    <p class="mut" style="margin:6px 0">${d.sel==null?'👆 Touche d’abord une joueuse, puis une action.':'Action pour #'+d.s[d.sel].n+' '+esc(nm(d.s[d.sel]))}</p>
-    <div class="g">${ACT.map(a=>`<button class="${a[2]}" ${d.sel==null?'disabled':''} onclick="dAct('${a[0]}')">${a[1]}</button>`).join('')}<button class="u" ${d.log.length?'':'disabled'} onclick="dUndo()">↩ Annuler</button></div>
-    <div class="card" style="overflow:auto"><table><tr><th>Joueuse</th><th>PTS</th><th>REB</th><th>PD</th><th>INT</th><th>BP</th><th>F</th><th>EVAL</th></tr>${d.s.map(p=>`<tr><td>#${p.n} ${esc(nm(p))}</td><td>${dPts(p)}</td><td>${p.reb}</td><td>${p.ast}</td><td>${p.stl}</td><td>${p.tov}</td><td>${p.pf}</td><td><b>${dEv(p)}</b></td></tr>`).join('')}</table></div>
-    <div class="card"><b>Historique</b>${d.log.length?d.log.slice(-6).reverse().map(l=>`<div class="mut">#${d.s[l.p].n} ${esc(nm(d.s[l.p]))} — ${ACT.find(a=>a[0]==l.t)[1]}</div>`).join(''):'<div class="mut">Aucune action pour l’instant.</div>'}</div>`;
-  }
-  return `<div class="row nw"><button class="nf" onclick="S.view='login';draw()">←</button><h1>Tester LaFeuille</h1></div>${tabs}${b}<div class="card" style="text-align:center"><b>Envie de l’utiliser pour votre club ?</b><button class="p" style="width:100%;margin-top:8px" onclick="reqGo()">📝 Demander mon compte</button></div>`;
+  const i=D.i,last=i==TOUR.length-1,s=TOUR[i]||[];let b;
+  if(i<0)b=`<div class="card" style="text-align:center"><div style="font-size:48px">🏀</div><h2>${RAISONS_TITRE}</h2><p>${RAISONS_INTRO}</p><button class="p" style="width:100%" onclick="D.i=0;draw()">Suivez le guide !</button></div>`;
+  else b=`<div class="card" style="text-align:center"><div style="font-size:48px">${s[0]}</div><h2>${s[1]}</h2><p>${s[2]}</p><div class="mut">${i+1} / ${TOUR.length}</div><div class="row nw" style="margin-top:8px"><button class="nf" onclick="D.i--;draw()">←</button><button class="p" onclick="${last?'demoPlay()':'D.i++;draw()'}">${last?'🎮 Essayer un vrai match':'Suivant →'}</button></div></div>`;
+  return `<div class="row nw"><button class="nf" onclick="S.view='login';draw()">←</button><h1>Tester LaFeuille</h1></div>${b}<button style="width:100%;margin-top:8px" onclick="demoPlay()">🎮 Essayer avec un vrai match de démo</button><div class="card" style="text-align:center"><b>Envie de l’utiliser pour votre club ?</b><button class="p" style="width:100%;margin-top:8px" onclick="reqGo()">📝 Demander mon compte</button></div>`;
 }
+/* match de démo : le vrai écran de saisie, mais rien n’est enregistré */
+function demoPlay(){
+  const A=[['Martin','Lucas'],['Dupont','Hugo'],['Bernard','Léo'],['Leroy','Tom'],['Moreau','Nathan'],['Petit','Paul'],['Roux','Enzo'],['Faure','Adam']],
+        B=[['Garcia','Mathis'],['Simon','Louis'],['Laurent','Jules'],['Michel','Ethan'],['Girard','Noah'],['Blanc','Axel'],['Chevalier','Théo'],['Perrin','Max']],
+        na=[4,5,7,8,9,10,11,12],nb=[4,6,7,9,10,11,13,15],
+        mk=(a,nn,o)=>a.map((x,i)=>({n:nn[i],name:x[0],first:x[1],pos:'',pid:'d'+o+i,k:o*1000+i,...(o?{o:1}:{})}));
+  const m={id:'demo',team:'Les Aigles',opp:'Les Lions',roster:mk(A,na,0).concat(mk(B,nb,1)),np:4,dur:600,season:null,closed:false,created_at:new Date().toISOString()};
+  if(!S.demo){QR=Q;RR=S.role;}
+  Q={i:[],d:[],m:[]};S.role='stat';S.demo=true;S.obs=false;S.clk=null;
+  S.m=m;S.sel=null;S.ps=null;S.edit=null;S.dlg=null;S.pop=null;S.pe=null;S.ex=false;S.ck=null;S.panel=null;S.so=[];S.si=[];S.tab='rec';S.view='live';S.to=null;
+  S.qt=1;S.rem=m.dur;S.run=false;S.duo=null;S.mine=new Set();S.ev=[];
+  initStart();m.roster.forEach(p=>{S.stt[K(p)]=(p.k%1000)<5?2:1;});
+  wake();draw();
+}
+function demoExit(){
+  stopClock();if(wl){wl.release();wl=null;}
+  try{localStorage.removeItem('cdemo');localStorage.removeItem('lf_evdemo');localStorage.removeItem('ddemo');}catch(e){}
+  if(QR){Q=QR;QR=null;}S.role=RR;S.demo=false;S.m=null;S.ev=[];S.panel=null;S.stt=null;S.view='login';S.err='';draw();
+}
+const demoBar=()=>`<div class="card" style="text-align:center;margin-top:16px"><b>🎮 Mode démo</b> <span class="mut">— rien n’est enregistré</span><div class="row nw" style="margin-top:6px"><button onclick="demoExit();demoGo()">📖 Guide</button><button class="p" onclick="demoExit();reqGo()">📝 Demander mon compte</button></div></div>`;
 const POSL=['PG','SG','SF','PF','C'];
 function plParse(t){return String(t||'').split('\n').map(l=>l.trim().split(/[;\t,]+|\s+/).filter(Boolean)).map(w=>{const n=parseInt(w[0]);if(isNaN(n)||!w[1])return null;const la=(w[w.length-1]||'').toUpperCase(),pos=w.length>2&&POSL.includes(la)?la:'',mid=w.slice(1,pos?w.length-1:w.length);return{n,name:mid[0],first:mid.slice(1).join(' '),pos};}).filter(Boolean);}
 const rqG=()=>({name:'',season:'',team:'',pl:''});
@@ -892,7 +902,7 @@ function draw(){
     const sec=(o,nm)=>`<div class="card"><div class="row"><b>${esc(nm)}</b><button class="nf good" onclick="saveTeam(${o})">💾 Enregistrer l'équipe</button></div><div class="row" style="margin:6px 0"><button onclick="pullTeam(${o})">🔄 Mettre à jour depuis l'équipe enregistrée</button></div><div class="row" style="margin:6px 0"><button onclick="tplXL()">⬇ Modèle Excel</button><button onclick="S.xo=${o};document.getElementById('xf').click()">📥 Importer Excel</button></div><div class="bubs">${S.m.roster.filter(p=>!!p.o==!!o).sort((a,b)=>a.n-b.n).map(p=>`<button class="bub${p.abs?' ab':''}" onclick="editP(${K(p)},${o})">${av(p)}<b>#${p.n}</b> ${esc(p.name)}<small>${esc(p.first||'')}${p.pos?' · '+p.pos:''}${p.abs?' · absent':''}</small></button>`).join('')}<button class="bub add" onclick="editP(null,${o})">＋</button></div></div>`;
     body=(S.ev.length?'':'<button style="width:100%;margin-bottom:8px" onclick="initStart();S.tab=\'rec\';draw()">📋 Composition de départ</button>')+sec(0,S.m.team)+sec(1,oN)+'<input type="file" id="xf" accept=".xlsx,.xls,.csv" hidden onchange="impXL(this)">';
   }
-  a.innerHTML=head+body+popH()+peH()+exH()+ckH()+dlgH();
+  a.innerHTML=head+body+popH()+peH()+exH()+ckH()+dlgH()+(S.demo?demoBar():'');
 }
 document.addEventListener('click',e=>{if(S.view!='live'||e.target.closest('.pl,.st'))return;if(S.sel!=null||S.ps){S.sel=null;S.ps=null;draw();}});
 if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
